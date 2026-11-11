@@ -10,7 +10,7 @@ reputation monitoring, and SPF / DKIM / DMARC domain authentication.
 |---|---|---|
 | 0 | Project skeleton, Docker, LocalStack resources, health check | Done |
 | 1 | Database schema, seeded templates, TemplateRenderer | Done |
-| 2 | Communication API: validation, idempotency, suppression check, outbox | Planned |
+| 2 | Communication API: validation, idempotency, suppression check, outbox | Done |
 | 3 | Sender worker calling SES, rate limiting, retries, DLQ | Planned |
 | 4 | Event pipeline, suppression rules, local event simulator | Planned |
 | 5 | Reputation metrics, suppression API, batch sending | Planned |
@@ -221,6 +221,45 @@ docker exec pigeon-localstack awslocal sqs list-queues
 curl.exe -s http://localhost:8080/actuator/health
 curl.exe -s http://localhost:8080/actuator/info
 ```
+
+## Try the API (PowerShell)
+
+Every request needs an `Idempotency-Key`. Reusing a key with the same body returns the original
+request; reusing it with a different body returns 422. `requests.http` has the same scenarios for
+IntelliJ's HTTP client.
+
+```powershell
+# 1. Accept an email (202, status QUEUED)
+$body = '{"templateId":"payment-receipt","recipient":"dana@example.com","stream":"TRANSACTIONAL","variables":{"firstName":"Dana","amount":"$412.60","paidOn":"November 6, 2026","last4":"4417"}}'
+$r = Invoke-RestMethod -Method Post -Uri http://localhost:8080/v1/communications `
+       -Headers @{ "Idempotency-Key" = "demo-001" } -ContentType "application/json" -Body $body
+$r
+
+# 2. Same key, same body: same requestId, nothing new is sent
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/v1/communications `
+  -Headers @{ "Idempotency-Key" = "demo-001" } -ContentType "application/json" -Body $body
+
+# 3. Status and history
+Invoke-RestMethod "http://localhost:8080/v1/communications/$($r.requestId)" | ConvertTo-Json -Depth 5
+
+# 4. Missing merge fields (400 listing every missing field)
+$bad = '{"templateId":"payment-receipt","recipient":"dana@example.com","stream":"TRANSACTIONAL","variables":{"firstName":"Dana"}}'
+try {
+  Invoke-RestMethod -Method Post -Uri http://localhost:8080/v1/communications `
+    -Headers @{ "Idempotency-Key" = "demo-002" } -ContentType "application/json" -Body $bad
+} catch { $_.ErrorDetails.Message }
+```
+
+| Response | When |
+|---|---|
+| `202 QUEUED` | Accepted and written to the outbox |
+| `202 SUPPRESSED` | Recipient is on the suppression list; recorded, never sent |
+| `202` + `Idempotent-Replayed: true` | Same key and body seen before; original result returned |
+| `400` | Missing header, invalid field, unknown template or missing merge fields |
+| `404` | Unknown requestId |
+| `422` | Same Idempotency-Key reused with a different body |
+
+Errors are `application/problem+json` (RFC 9457) with a stable `type` and details such as `missingFields`.
 
 ## Tests
 ```powershell

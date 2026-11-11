@@ -1,0 +1,115 @@
+### Pigeon - Communication API scenarios (IntelliJ HTTP client or VS Code REST Client)
+### Start the app with the local profile first. Change the Idempotency-Key values to re-run.
+
+@base = http://localhost:8080
+
+### 1. Accept a payment receipt -> 202 QUEUED
+POST {{base}}/v1/communications
+Content-Type: application/json
+Idempotency-Key: demo-receipt-001
+X-Correlation-Id: demo-corr-001
+
+{
+  "templateId": "payment-receipt",
+  "recipient": "dana@example.com",
+  "stream": "TRANSACTIONAL",
+  "variables": {
+    "firstName": "Dana",
+    "amount": "$412.60",
+    "paidOn": "November 6, 2026",
+    "last4": "4417"
+  }
+}
+
+### 2. Same key, same body -> 202, same requestId, Idempotent-Replayed: true
+POST {{base}}/v1/communications
+Content-Type: application/json
+Idempotency-Key: demo-receipt-001
+
+{
+  "templateId": "payment-receipt",
+  "recipient": "DANA@example.com",
+  "stream": "TRANSACTIONAL",
+  "variables": { "last4": "4417", "paidOn": "November 6, 2026", "amount": "$412.60", "firstName": "Dana" }
+}
+
+### 3. Same key, different body -> 422 idempotency-key-reused
+POST {{base}}/v1/communications
+Content-Type: application/json
+Idempotency-Key: demo-receipt-001
+
+{
+  "templateId": "payment-receipt",
+  "recipient": "someone.else@example.com",
+  "stream": "TRANSACTIONAL",
+  "variables": { "firstName": "Sam", "amount": "$10.00", "paidOn": "November 6, 2026", "last4": "0001" }
+}
+
+### 4. Enrollment confirmation as XML -> 202 (template version 2)
+POST {{base}}/v1/communications
+Content-Type: application/xml
+Accept: application/json
+Idempotency-Key: demo-enroll-001
+
+<communication>
+  <templateId>enrollment-confirmation</templateId>
+  <recipient>dana@example.com</recipient>
+  <stream>TRANSACTIONAL</stream>
+  <variables>
+    <firstName>Dana</firstName>
+    <planName>Gold PPO 2027</planName>
+    <effectiveDate>January 1, 2027</effectiveDate>
+    <memberId>AB-448210</memberId>
+  </variables>
+</communication>
+
+### 5. Bulk stream -> configuration set pigeon-bulk-prod
+POST {{base}}/v1/communications
+Content-Type: application/json
+Idempotency-Key: demo-bulk-001
+
+{
+  "templateId": "payment-receipt",
+  "recipient": "dana@example.com",
+  "stream": "BULK",
+  "variables": { "firstName": "Dana", "amount": "$412.60", "paidOn": "November 6, 2026", "last4": "4417" }
+}
+
+### 6. Missing merge fields -> 400 with missingFields
+POST {{base}}/v1/communications
+Content-Type: application/json
+Idempotency-Key: demo-missing-001
+
+{
+  "templateId": "payment-receipt",
+  "recipient": "dana@example.com",
+  "stream": "TRANSACTIONAL",
+  "variables": { "firstName": "Dana" }
+}
+
+### 7. Invalid fields -> 400 listing every field error
+POST {{base}}/v1/communications
+Content-Type: application/json
+Idempotency-Key: demo-invalid-001
+
+{ "templateId": "", "recipient": "not-an-email", "variables": {} }
+
+### 8. Unknown template -> 400 unknown-template
+POST {{base}}/v1/communications
+Content-Type: application/json
+Idempotency-Key: demo-unknown-001
+
+{ "templateId": "no-such-template", "recipient": "dana@example.com", "stream": "TRANSACTIONAL", "variables": {} }
+
+### 9. Missing Idempotency-Key -> 400
+POST {{base}}/v1/communications
+Content-Type: application/json
+
+{ "templateId": "payment-receipt", "recipient": "dana@example.com", "stream": "TRANSACTIONAL", "variables": {} }
+
+### 10. Status and history (paste a requestId from request 1)
+GET {{base}}/v1/communications/00000000-0000-0000-0000-000000000000
+Accept: application/json
+
+### 11. Health
+GET {{base}}/actuator/health
