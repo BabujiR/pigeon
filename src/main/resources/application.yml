@@ -1,0 +1,53 @@
+# Pigeon - shared configuration. Environment-specific values live in application-<profile>.yml.
+# No credentials here: they come from the profile (LocalStack) or the runtime role (real AWS).
+spring:
+  application:
+    name: pigeon
+  datasource:
+    url: ${PIGEON_DB_URL}
+    username: ${PIGEON_DB_USERNAME}
+    password: ${PIGEON_DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate          # Flyway owns the schema; Hibernate only checks it matches
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  cloud:
+    aws:
+      region:
+        static: ${AWS_REGION:us-east-1}
+
+pigeon:
+  aws:
+    queues:
+      send: pigeon-send-queue
+      send-dlq: pigeon-send-dlq
+      events: pigeon-events-queue
+      events-dlq: pigeon-events-dlq
+    events-topic: pigeon-events-topic
+    configuration-sets:
+      transactional: pigeon-txn-prod
+      bulk: pigeon-bulk-prod
+    identity: notify.pigeon.local
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: Pigeon
+    tagline: Trusted delivery, built on AWS SES.

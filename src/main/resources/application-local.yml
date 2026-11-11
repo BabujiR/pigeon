@@ -1,0 +1,19 @@
+# Local profile: Postgres and LocalStack from docker-compose.yml.
+# Activate with SPRING_PROFILES_ACTIVE=local or -Dspring-boot.run.profiles=local
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:${PIGEON_DB_PORT:5432}/pigeon
+    username: pigeon
+    password: pigeon
+  cloud:
+    aws:
+      endpoint: http://localhost:4566
+      credentials:
+        # LocalStack accepts any credentials; "test" is its convention. Never real keys here.
+        access-key: test
+        secret-key: test
+
+management:
+  endpoint:
+    health:
+      show-details: always        # locally we want to see every component's details

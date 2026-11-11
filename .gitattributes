@@ -1,0 +1,5 @@
+# Normalize line endings in the repo; Windows checkouts get CRLF for most text files.
+* text=auto
+# Scripts that run inside Linux containers must keep LF or bash fails with "\r" errors.
+*.sh text eol=lf
+*.cmd text eol=crlf

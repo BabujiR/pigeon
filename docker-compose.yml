@@ -1,0 +1,47 @@
+# Pigeon local infrastructure: Postgres + LocalStack (SQS, SNS, SES).
+# Start:  docker compose up -d
+# Reset:  docker compose down -v   (wipes the database volume)
+name: pigeon
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pigeon-postgres
+    environment:
+      POSTGRES_DB: pigeon
+      POSTGRES_USER: pigeon
+      POSTGRES_PASSWORD: pigeon
+    ports:
+      # Change PIGEON_DB_PORT in .env if 5432 is already used by a Postgres on your machine.
+      - "${PIGEON_DB_PORT:-5432}:5432"
+    volumes:
+      - pigeon-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pigeon -d pigeon"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  localstack:
+    # Pinned on purpose: 4.14 is the last LocalStack release that runs without an
+    # account token. Newer images need LOCALSTACK_AUTH_TOKEN (free Hobby plan) - see .env.example.
+    image: localstack/localstack:4.14
+    container_name: pigeon-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: sqs,sns,ses
+      AWS_DEFAULT_REGION: us-east-1
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:-}
+    volumes:
+      # Every *.sh in this folder runs once LocalStack is ready and creates the pigeon-* resources.
+      - ./localstack/init/ready.d:/etc/localstack/init/ready.d
+    healthcheck:
+      # Healthy only after the init script has finished, not just when the port opens.
+      test: ["CMD-SHELL", "curl -s http://localhost:4566/_localstack/init/ready | grep -Eq '\"completed\": ?true'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pigeon-pgdata:

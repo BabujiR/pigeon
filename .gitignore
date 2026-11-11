@@ -1,0 +1,10 @@
+# Build
+target/
+# IntelliJ (shared run configurations in .run/ are kept)
+.idea/
+*.iml
+# Local secrets
+.env
+# OS
+.DS_Store
+Thumbs.db
