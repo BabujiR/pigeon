@@ -22,59 +22,45 @@ reputation monitoring, and SPF / DKIM / DMARC domain authentication.
 Solid arrows carry an email out. Dashed arrows carry delivery events back.
 
 ```mermaid
-flowchart LR
+flowchart TB
     client["Client apps<br/>enrollment, billing"]
+    api["Communication API<br/>validate · dedupe · suppress"]
+    db[("PostgreSQL<br/>messages · outbox · templates<br/>suppression")]
+    relay["Outbox relay"]
+    sendq[["SQS<br/>pigeon-send-queue"]]
+    worker["Sender worker<br/>render · rate limit"]
+    ses["Amazon SES<br/>txn / bulk config sets"]
+    inbox["Mailbox providers<br/>Gmail · Outlook"]
+    topic(["SNS<br/>pigeon-events-topic"])
+    evq[["SQS<br/>pigeon-events-queue"]]
+    processor["Event processor<br/>status · suppression"]
+    dlq1[["pigeon-send-dlq"]]
+    dlq2[["pigeon-events-dlq"]]
 
-    subgraph pigeon["Pigeon (Spring Boot)"]
-        api["Communication API<br/>POST /v1/communications"]
-        relay["Outbox relay"]
-        worker["Sender worker"]
-        processor["Event processor"]
-        metrics["Metrics API<br/>GET /v1/metrics"]
-    end
+    client -->|"1 POST + Idempotency-Key"| api
+    api -->|"2 record + outbox<br/>one transaction"| db
+    db -->|"3 pending rows"| relay
+    relay -->|"4 publish"| sendq
+    sendq -->|"5 consume"| worker
+    worker -->|"6 SendEmail"| ses
+    ses -->|"7 deliver"| inbox
 
-    subgraph data["PostgreSQL"]
-        db[("message_record · message_event<br/>idempotency_key · outbox<br/>template · template_version")]
-        supp[("suppression · soft_bounce<br/>processed_event")]
-    end
-
-    subgraph aws["AWS (LocalStack locally)"]
-        sendq[["SQS<br/>pigeon-send-queue"]]
-        senddlq[["SQS<br/>pigeon-send-dlq"]]
-        ses["Amazon SES<br/>pigeon-txn-prod · pigeon-bulk-prod"]
-        topic(["SNS<br/>pigeon-events-topic"])
-        evq[["SQS<br/>pigeon-events-queue"]]
-        evdlq[["SQS<br/>pigeon-events-dlq"]]
-    end
-
-    inbox["Mailbox providers<br/>Gmail, Outlook, gateways"]
-
-    client -->|"1 request + Idempotency-Key"| api
-    api -->|"2 check"| supp
-    api -->|"3 record + outbox row<br/>(one transaction)"| db
-    api -.->|"202 requestId"| client
-    relay -->|"4 poll pending"| db
-    relay -->|"5 publish"| sendq
-    sendq -->|"6 consume"| worker
-    worker -->|"7 render active version"| db
-    worker -->|"8 SendEmail"| ses
-    sendq -->|"after 3 failures"| senddlq
-    ses -->|"9 deliver, DKIM-signed"| inbox
-
-    ses -.->|"10 delivery / bounce / complaint"| topic
+    ses -.->|"8 delivery · bounce · complaint"| topic
     topic -.-> evq
-    evq -.->|"11 consume"| processor
-    evq -.->|"after 3 failures"| evdlq
-    processor -.->|"12 update status + history"| db
-    processor -.->|"13 suppress hard bounces<br/>and complaints"| supp
-    metrics --- db
+    evq -.->|"9 consume"| processor
+    processor -.->|"10 update status,<br/>suppress bad addresses"| db
 
-    classDef awsNode fill:#fff4e5,stroke:#d9822b,color:#1b2430
-    classDef appNode fill:#e8eefc,stroke:#2b4fc4,color:#1b2430
-    classDef dataNode fill:#eaf6ef,stroke:#1d7347,color:#1b2430
-    class sendq,senddlq,ses,topic,evq,evdlq awsNode
-    class api,relay,worker,processor,metrics appNode
-    class db,supp dataNode
+    sendq -.->|"3 failures"| dlq1
+    evq -.->|"3 failures"| dlq2
+
+    classDef aws fill:#fff4e5,stroke:#d9822b,color:#1b2430
+    classDef app fill:#e8eefc,stroke:#2b4fc4,color:#1b2430
+    classDef data fill:#eaf6ef,stroke:#1d7347,color:#1b2430
+    classDef dlq fill:#fdecea,stroke:#b02a1e,color:#1b2430
+    class sendq,ses,topic,evq aws
+    class api,relay,worker,processor app
+    class db data
+    class dlq1,dlq2 dlq
 ```
 
 ### One email, start to finish

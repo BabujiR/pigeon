@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pigeon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: an operations console — header, tab strip, then a two-column workbench (controls left, live results right) that stacks on phones */
+:root{
+  --bg:#eef1f5; --surface:#ffffff; --sunk:#e4e9f0; --line:#cfd7e2;
+  --ink:#131c2b; --muted:#566377; --accent:#2b4fc4; --accent-soft:#dfe6fb;
+  --ok:#1d7347; --ok-soft:#dcf1e5; --warn:#9a5a00; --warn-soft:#fbecd2; --bad:#b02a1e; --bad-soft:#fbe0dc;
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e131b; --surface:#151c27; --sunk:#1b2431; --line:#2a3546;
+  --ink:#e3e8f0; --muted:#98a4b6; --accent:#8ea6ff; --accent-soft:#1f2a4a;
+  --ok:#55c78d; --ok-soft:#15301f; --warn:#e9a94a; --warn-soft:#352610; --bad:#f2786b; --bad-soft:#3a1a17;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e131b; --surface:#151c27; --sunk:#1b2431; --line:#2a3546;
+  --ink:#e3e8f0; --muted:#98a4b6; --accent:#8ea6ff; --accent-soft:#1f2a4a;
+  --ok:#55c78d; --ok-soft:#15301f; --warn:#e9a94a; --warn-soft:#352610; --bad:#f2786b; --bad-soft:#3a1a17;
+  color-scheme:dark}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 56px}
+header .eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(30px,5vw,44px);letter-spacing:-.02em;margin:6px 0 8px;text-wrap:balance}
+h2{font-family:var(--f-display);font-weight:700;font-size:21px;margin:0 0 6px;text-wrap:balance}
+h3{font-family:var(--f-display);font-weight:700;font-size:16px;margin:0 0 8px}
+p{margin:0 0 10px}
+.lede{max-width:70ch;color:var(--muted)}
+.tagline{font-family:var(--f-display);font-weight:600;font-size:clamp(17px,2.4vw,21px);color:var(--accent);margin:-4px 0 12px}
+code,.mono{font-family:var(--f-mono);font-size:.86em}
+nav.tabs{display:flex;flex-wrap:wrap;gap:4px;margin:22px 0 18px;border-bottom:1px solid var(--line)}
+nav.tabs a{font-family:var(--f-display);font-weight:600;font-size:15px;color:var(--muted);text-decoration:none;padding:9px 14px;border-bottom:3px solid transparent;margin-bottom:-1px}
+nav.tabs a[aria-current="page"]{color:var(--ink);border-color:var(--accent)}
+nav.tabs a:hover{color:var(--ink)}
+a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:18px}
+.grid2{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:18px;align-items:start}
+.stack{display:flex;flex-direction:column;gap:18px;min-width:0}
+@media (max-width:860px){.grid2{grid-template-columns:minmax(0,1fr)}}
+label{display:block;font-weight:600;font-size:14px;margin-bottom:4px}
+.hint{font-size:13px;color:var(--muted)}
+select,input[type=text],textarea{width:100%;font:inherit;font-size:15px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:8px 10px}
+textarea{font-family:var(--f-mono);font-size:13px;min-height:120px;resize:vertical}
+.field{display:flex;flex-direction:column;gap:2px}
+.fields{display:flex;flex-direction:column;gap:14px}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;font-weight:600;font-size:14px;border-radius:4px;padding:9px 14px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.small{padding:4px 9px;font-size:12px}
+.pill{display:inline-block;font-family:var(--f-mono);font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;border-radius:999px;padding:2px 9px;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.warn{background:var(--warn-soft);color:var(--warn)} .pill.bad{background:var(--bad-soft);color:var(--bad)} .pill.info{background:var(--accent-soft);color:var(--accent)} .pill.mute{background:var(--sunk);color:var(--muted)}
+
+/* pipeline */
+ol.pipe{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+ol.pipe li{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:start;padding:8px 0;border-top:1px solid var(--line)}
+ol.pipe li:first-child{border-top:0}
+.dot{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-family:var(--f-mono);font-size:11px;color:var(--muted);background:var(--surface)}
+li.active .dot{border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+li.done .dot{border-color:var(--ok);background:var(--ok);color:var(--surface)}
+li.fail .dot{border-color:var(--bad);background:var(--bad);color:var(--surface)}
+li.skip{opacity:.45}
+.stepname{font-weight:600}
+.stepdetail{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.svc{font-family:var(--f-mono);font-size:11px;color:var(--muted);white-space:nowrap}
+
+/* metrics */
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.metric{background:var(--surface);padding:12px 14px}
+.metric .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.metric .v{font-family:var(--f-display);font-weight:700;font-size:24px;font-variant-numeric:tabular-nums}
+@media (max-width:560px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.gauge{margin-top:12px}
+.gauge .row{display:flex;justify-content:space-between;gap:8px;font-size:13px;flex-wrap:wrap}
+.track{position:relative;height:10px;border-radius:5px;background:var(--sunk);margin:6px 0 16px}
+.fill{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:var(--ok);transition:width .3s}
+.mark{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--muted)}
+.mark span{position:absolute;top:16px;left:-14px;font-family:var(--f-mono);font-size:10px;color:var(--muted);white-space:nowrap}
+
+/* email preview */
+.mail{border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.mail .hdr{background:var(--sunk);padding:10px 12px;font-size:13px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px}
+.mail .hdr b{color:var(--muted);font-weight:600}
+.mail .hdr span{overflow-wrap:anywhere}
+.mail .body{padding:14px;white-space:pre-wrap;font-size:15px}
+
+pre{margin:0;background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow-x:auto;font-family:var(--f-mono);font-size:12.5px;line-height:1.55;color:var(--ink);tab-size:4}
+pre .c{color:var(--muted);font-style:italic} pre .a{color:var(--accent)} pre .s{color:var(--ok)}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+td.num{font-variant-numeric:tabular-nums}
+tr.missing td{color:var(--bad);text-decoration:line-through}
+
+/* diagram */
+.diagram{overflow-x:auto}
+.diagram svg{min-width:780px;width:100%;height:auto;display:block}
+.node{cursor:pointer}
+.node rect{fill:var(--surface);stroke:var(--line);stroke-width:1.5}
+.node.aws rect{stroke:var(--accent)}
+.node.sel rect{fill:var(--accent-soft);stroke:var(--accent);stroke-width:2.5}
+.node:focus{outline:none} .node:focus-visible rect{stroke:var(--accent);stroke-width:3}
+.node .t{fill:var(--ink);font-family:var(--f-display);font-weight:700;font-size:13px}
+.node .s{fill:var(--muted);font-family:var(--f-body);font-size:11px}
+.edge{stroke:var(--muted);stroke-width:1.5;fill:none}
+.edge.evt{stroke:var(--warn);stroke-dasharray:5 4}
+.elabel{fill:var(--muted);font-family:var(--f-mono);font-size:10px}
+.lane{fill:var(--muted);font-family:var(--f-mono);font-size:10.5px;letter-spacing:.1em}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--muted);margin-top:10px}
+.legend i{display:inline-block;width:22px;height:0;border-top:2px solid var(--muted);vertical-align:middle;margin-right:6px}
+.legend i.evt{border-top:2px dashed var(--warn)}
+.jd{border-left:3px solid var(--accent);padding:6px 0 6px 12px;font-size:14px;color:var(--muted);margin-top:10px}
+
+/* auth */
+.checks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:640px){.checks{grid-template-columns:minmax(0,1fr)}}
+.check{border:1px solid var(--line);border-radius:6px;padding:12px;background:var(--surface)}
+.check .top{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px}
+.check p{font-size:13.5px;color:var(--muted);margin:0}
+.verdict{border-radius:6px;padding:14px 16px;border:1px solid var(--line)}
+.verdict.ok{background:var(--ok-soft);border-color:var(--ok)} .verdict.warn{background:var(--warn-soft);border-color:var(--warn)} .verdict.bad{background:var(--bad-soft);border-color:var(--bad)}
+.toggle{display:flex;gap:10px;align-items:flex-start;font-weight:400;font-size:15px;cursor:pointer}
+.toggle input{margin-top:4px;accent-color:var(--accent)}
+
+/* playbook */
+details{border-top:1px solid var(--line);padding:10px 0}
+details:first-of-type{border-top:0}
+summary{cursor:pointer;font-weight:600}
+details p,details ul{font-size:15px;margin-top:8px;max-width:75ch}
+ul.tight{margin:0;padding-left:20px} ul.tight li{margin:3px 0}
+.checklist label{font-weight:400;display:flex;gap:8px;align-items:flex-start;padding:4px 0}
+.checklist input{margin-top:5px;accent-color:var(--accent)}
+.progress{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.cols3{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;align-items:start}
+.log td{font-family:var(--f-mono);font-size:12px}
+.supp li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--line);font-family:var(--f-mono);font-size:12px;overflow-wrap:anywhere}
+.supp ul{list-style:none;margin:0;padding:0;max-height:220px;overflow:auto}
+.status-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Enterprise transactional email platform · Learning lab</div>
+  <h1>Pigeon</h1>
+  <p class="tagline">Trusted delivery, built on AWS SES.</p>
+  <p class="lede">A working model of Pigeon, the platform described in the job posting. Follow one enrollment email from the API call to the inbox, break the domain's DNS on purpose, push a dirty list through and watch SES reputation react, then read the Java that implements each step. Everything runs in your browser; no real email is sent.</p>
+</header>
+
+<p class="hint" style="margin-top:10px">Pigeon is running on this machine. Live endpoints: <a href="/actuator/health">health</a> · <a href="/actuator/info">info</a> · <a href="/actuator/prometheus">metrics</a>. The simulator below runs in your browser; from Phase 2 on, the real API is at <code>/v1/communications</code>.</p>
+
+<nav class="tabs" aria-label="Sections">
+  <a href="#architecture" data-view="architecture">1. Architecture</a>
+  <a href="#send" data-view="send">2. Send simulator</a>
+  <a href="#auth" data-view="auth">3. Domain authentication</a>
+  <a href="#code" data-view="code">4. Java code</a>
+  <a href="#playbook" data-view="playbook">5. Lead playbook</a>
+</nav>
+
+<!-- ============ ARCHITECTURE ============ -->
+<section id="v-architecture" class="stack">
+  <div class="panel">
+    <h2>The platform on one page</h2>
+    <p class="hint">Solid arrows carry an email out. Dashed arrows carry delivery events back. Select any box to see what it does and which line of the job description it answers.</p>
+    <div class="diagram" role="group" aria-label="Architecture diagram">
+      <svg viewBox="0 0 900 392" xmlns="http://www.w3.org/2000/svg" id="arch">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker>
+          <marker id="ahe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--warn)"/></marker>
+        </defs>
+        <text class="lane" x="12" y="22">SEND PATH →</text>
+        <text class="lane" x="12" y="162">SUPPORTING SERVICES</text>
+        <text class="lane" x="12" y="302">← EVENT PATH (FEEDBACK LOOP)</text>
+        <!-- row1 edges -->
+        <path class="edge" d="M140,63 H158" marker-end="url(#ah)"/>
+        <path class="edge" d="M288,63 H306" marker-end="url(#ah)"/>
+        <path class="edge" d="M436,63 H454" marker-end="url(#ah)"/>
+        <path class="edge" d="M584,63 H602" marker-end="url(#ah)"/>
+        <path class="edge" d="M732,63 H750" marker-end="url(#ah)"/>
+        <!-- row1 to row2 -->
+        <path class="edge" d="M224,92 V170" marker-end="url(#ah)"/><text class="elabel" x="230" y="135">render</text>
+        <path class="edge" d="M270,92 L350,170" marker-end="url(#ah)"/><text class="elabel" x="318" y="128">check</text>
+        <path class="edge" d="M520,92 V170" marker-end="url(#ah)"/><text class="elabel" x="526" y="135">after N retries</text>
+        <path class="edge" d="M816,92 V170" marker-end="url(#ah)"/><text class="elabel" x="822" y="135">DNS lookup</text>
+        <!-- SES to SNS -->
+        <path class="edge evt" d="M668,92 V310" marker-end="url(#ahe)"/><text class="elabel" x="674" y="206">bounce · complaint</text><text class="elabel" x="674" y="219">delivery · reject</text>
+        <!-- row3 edges (leftward) -->
+        <path class="edge evt" d="M604,341 H586" marker-end="url(#ahe)"/>
+        <path class="edge evt" d="M456,341 H438" marker-end="url(#ahe)"/>
+        <path class="edge evt" d="M308,341 H290" marker-end="url(#ahe)"/>
+        <path class="edge evt" d="M160,341 H142" marker-end="url(#ahe)"/>
+        <path class="edge evt" d="M372,310 V232" marker-end="url(#ahe)"/><text class="elabel" x="378" y="276">add to suppression</text>
+      </svg>
+    </div>
+    <div class="legend"><span><i></i>Outbound email</span><span><i class="evt"></i>Delivery events (async)</span><span>Blue outline = AWS managed service</span></div>
+  </div>
+  <div class="panel" id="nodeDetail" aria-live="polite"></div>
+</section>
+
+<!-- ============ SEND ============ -->
+<section id="v-send" hidden>
+  <div class="grid2">
+    <div class="stack">
+      <div class="panel">
+        <h2>Communication request</h2>
+        <p class="hint">This is what a calling application (enrollment, billing) posts to <code>POST /v1/communications</code>.</p>
+        <div class="fields">
+          <div class="field"><label for="tpl">Template</label>
+            <select id="tpl"></select></div>
+          <div class="field"><label for="rcpt">Recipient</label>
+            <select id="rcpt"></select>
+            <span class="hint" id="rcptHint"></span></div>
+          <div class="field"><label for="stream">Traffic stream</label>
+            <select id="stream">
+              <option value="txn">Transactional (config set pigeon-txn-prod, dedicated IP pool)</option>
+              <option value="bulk">Bulk notices (config set pigeon-bulk-prod, shared pool)</option>
+            </select>
+            <span class="hint">Separate streams keep a bad bulk campaign from hurting password resets.</span></div>
+          <div class="field"><label for="vars">Merge variables (JSON)</label>
+            <textarea id="vars" spellcheck="false"></textarea>
+            <span class="hint">Delete a field to see request validation reject it.</span></div>
+          <div class="btnrow"><button class="primary" id="sendBtn">Send one email</button></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Volume tests</h2>
+        <p class="hint">Push a batch through to see how list quality moves the reputation numbers SES watches.</p>
+        <div class="btnrow">
+          <button id="batchClean">Send 500 · clean list</button>
+          <button id="batchDirty">Send 500 · old purchased list</button>
+          <button id="resetBtn">Reset account</button>
+        </div>
+      </div>
+      <div class="panel supp">
+        <h2>Suppression list <span class="pill mute" id="suppCount">0</span></h2>
+        <p class="hint">Addresses the platform will refuse to send to. Hard bounces and complaints land here automatically.</p>
+        <ul id="suppList"></ul>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="panel">
+        <div class="status-line"><h2 style="margin:0">Account reputation</h2><span class="pill ok" id="acctStatus">Healthy</span></div>
+        <div class="metrics">
+          <div class="metric"><div class="k">Sent</div><div class="v" id="mSent">0</div></div>
+          <div class="metric"><div class="k">Delivered</div><div class="v" id="mDel">0</div></div>
+          <div class="metric"><div class="k">Bounce rate</div><div class="v" id="mBr">0.00%</div></div>
+          <div class="metric"><div class="k">Complaint rate</div><div class="v" id="mCr">0.000%</div></div>
+        </div>
+        <div class="gauge">
+          <div class="row"><span>Bounce rate vs SES limits</span><span class="hint">review at 5% · pause at 10%</span></div>
+          <div class="track" aria-hidden="true"><div class="fill" id="gB"></div><div class="mark" style="left:41.6%"><span>5%</span></div><div class="mark" style="left:83.3%"><span>10%</span></div></div>
+          <div class="row"><span>Complaint rate vs SES limits</span><span class="hint">review at 0.1% · pause at 0.5%</span></div>
+          <div class="track" aria-hidden="true"><div class="fill" id="gC"></div><div class="mark" style="left:16.6%"><span>0.1%</span></div><div class="mark" style="left:83.3%"><span>0.5%</span></div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Pipeline</h2>
+        <ol class="pipe" id="pipe"></ol>
+      </div>
+
+      <div class="panel" id="previewPanel">
+        <h2>Rendered email</h2>
+        <div class="mail" id="mail"><div class="body hint">Send an email to see the rendered message here.</div></div>
+      </div>
+
+      <div class="panel">
+        <h2>Last SES event notification</h2>
+        <p class="hint">The JSON your event processor receives from SNS. This is the data behind dashboards, reconciliation and suppression.</p>
+        <pre id="evt">// no events yet</pre>
+      </div>
+
+      <div class="panel">
+        <h2>Event log</h2>
+        <div class="tablewrap"><table class="log"><thead><tr><th>Time</th><th>Message</th><th>Recipient</th><th>Event</th><th>Platform action</th></tr></thead><tbody id="log"></tbody></table></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ AUTH ============ -->
+<section id="v-auth" hidden>
+  <div class="grid2">
+    <div class="stack">
+      <div class="panel">
+        <h2>Your sending domain</h2>
+        <p class="hint">Turn records off to see what mailbox providers conclude. Presets show the three situations you will meet most.</p>
+        <div class="btnrow" style="margin-bottom:14px">
+          <button class="small" data-preset="good">Production-ready</button>
+          <button class="small" data-preset="nomf">SES defaults only</button>
+          <button class="small" data-preset="broken">DKIM missing, p=reject</button>
+        </div>
+        <div class="fields">
+          <div class="field"><label for="fromDom">From domain</label><input type="text" id="fromDom" value="notify.acmebenefits.com"><span class="hint">Use a subdomain per stream so each has its own reputation.</span></div>
+          <label class="toggle"><input type="checkbox" id="aDkim" checked><span><b>Easy DKIM</b>: 3 CNAME records published. SES signs with your domain (d=).</span></label>
+          <label class="toggle"><input type="checkbox" id="aMf" checked><span><b>Custom MAIL FROM</b>: bounce subdomain with MX to SES. Sets the Return-Path to your domain.</span></label>
+          <label class="toggle"><input type="checkbox" id="aSpf" checked><span><b>SPF</b> TXT on the MAIL FROM subdomain: <code>include:amazonses.com</code></span></label>
+          <div class="field"><label for="aDmarc">DMARC policy</label>
+            <select id="aDmarc">
+              <option value="missing">No DMARC record</option>
+              <option value="none">p=none (monitor only)</option>
+              <option value="quarantine">p=quarantine</option>
+              <option value="reject" selected>p=reject</option>
+            </select></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Why alignment matters</h3>
+        <p style="font-size:15px">SPF and DKIM can both <em>pass</em> and DMARC can still <em>fail</em>. DMARC asks whether a passing check belongs to the same organization as the visible From address. Without custom MAIL FROM, SPF passes for <code>amazonses.com</code>, which is not you. Without Easy DKIM, the signature is SES's, not yours. Either one aligned is enough; production setups have both.</p>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="verdict" id="verdict"></div>
+      <div class="checks" id="checks"></div>
+      <div class="panel">
+        <h2>DNS records to publish</h2>
+        <div class="tablewrap"><table><thead><tr><th>Purpose</th><th>Type</th><th>Name</th><th>Value</th></tr></thead><tbody id="dnsRows"></tbody></table></div>
+      </div>
+      <div class="panel">
+        <h2>What Gmail writes in the header</h2>
+        <pre id="authHdr"></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CODE ============ -->
+<section id="v-code" hidden>
+  <div class="grid2">
+    <div class="stack">
+      <div class="panel">
+        <h2>Spring Boot services</h2>
+        <p class="hint">Illustrative code using Spring Boot 3, Spring Cloud AWS 3 and the AWS SDK v2 SESv2 client. Pick a file.</p>
+        <div class="fields">
+          <div class="field"><label for="codeSel">File</label><select id="codeSel"></select></div>
+        </div>
+        <div id="codeWhy" style="margin-top:14px"></div>
+      </div>
+    </div>
+    <div class="stack" style="min-width:0">
+      <pre id="codeBox"></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PLAYBOOK ============ -->
+<section id="v-playbook" hidden>
+  <div class="cols3">
+    <div class="panel checklist">
+      <h2>Production readiness</h2>
+      <p class="progress" id="ckProg"></p>
+      <div id="ck"></div>
+    </div>
+    <div class="panel">
+      <h2>Numbers to know</h2>
+      <div class="tablewrap"><table><tbody>
+        <tr><td>SES bounce rate</td><td class="num">Review ≥ 5%, pause ≥ 10%</td></tr>
+        <tr><td>SES complaint rate</td><td class="num">Review ≥ 0.1%, pause ≥ 0.5%</td></tr>
+        <tr><td>Gmail/Yahoo spam rate</td><td class="num">Stay under 0.1%, never reach 0.3%</td></tr>
+        <tr><td>Bulk sender threshold</td><td class="num">5,000+ msgs/day to Gmail</td></tr>
+        <tr><td>Bulk requirement</td><td>SPF + DKIM, DMARC record, alignment, one-click unsubscribe</td></tr>
+        <tr><td>Sandbox limits</td><td class="num">Verified recipients only, 200/day, 1/sec</td></tr>
+        <tr><td>SMTP 5xx vs 4xx</td><td>5xx permanent (hard), 4xx temporary (soft)</td></tr>
+        <tr><td>DKIM key</td><td>2048-bit, rotate on a schedule</td></tr>
+      </tbody></table></div>
+      <p class="hint" style="margin-top:10px">Check AWS and Google docs before quoting limits in a meeting; they change.</p>
+    </div>
+    <div class="panel">
+      <h2>Risks a lead raises early</h2>
+      <ul class="tight">
+        <li>Sending enrollment and marketing from one domain and pool, so one bad list hurts every email.</li>
+        <li>No idempotency key, so a retry storm sends members duplicates.</li>
+        <li>Event processing that silently drops SNS messages, so suppression drifts.</li>
+        <li>Cutting over from the old platform without warming dedicated IPs.</li>
+        <li>DMARC jumping straight to p=reject before reports show every sender is aligned.</li>
+        <li>PII in logs and in S3 template payloads without encryption and retention rules.</li>
+        <li>Nobody owns the DNS change process, so records drift.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="panel" style="margin-top:18px">
+    <h2>Likely interview questions</h2>
+    <p class="hint">Short answers in the voice of a lead. Expand each one.</p>
+    <div id="qa"></div>
+  </div>
+</section>
+</div>
+
+<script>
+(function(){
+const $=s=>document.querySelector(s);
+const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const sleep=ms=>new Promise(r=>setTimeout(r,reduce?0:ms));
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* ---------- routing ---------- */
+const views=['architecture','send','auth','code','playbook'];
+function route(){
+  let v=(location.hash||'').slice(1); if(!views.includes(v)) v='architecture';
+  views.forEach(x=>{ $('#v-'+x).hidden = x!==v; });
+  document.querySelectorAll('nav.tabs a').forEach(a=>a.toggleAttribute('aria-current',a.dataset.view===v) && a.setAttribute('aria-current','page'));
+}
+window.addEventListener('hashchange',route); route();
+
+/* ---------- architecture ---------- */
+const nodes=[
+ {id:'clients',x:12,y:34,t:'Client apps',s:'Enrollment, billing',aws:false,
+  d:'Business systems that need to tell a member something. They never talk to SES directly; they post a structured request (JSON or XML) and get back a tracking id.',
+  jd:'Implement services capable of accepting structured communication requests, including XML/JSON and application-generated requests.'},
+ {id:'api',x:160,y:34,t:'Communication API',s:'Spring Boot REST',aws:false,
+  d:'Validates the request, applies an idempotency key so retries never send twice, checks suppression, stores the request with status ACCEPTED and enqueues it. Returns 202 immediately; sending is asynchronous.',
+  jd:'Develop Java/Spring Boot services and APIs supporting email generation, communication requests, processing, routing, and delivery.'},
+ {id:'queue',x:308,y:34,t:'SQS send queue',s:'buffer + backpressure',aws:true,
+  d:'Absorbs spikes (open enrollment can be millions of emails in a day) so the API never waits on SES. Visibility timeout and a redrive policy give retries for free.',
+  jd:'Design asynchronous, resilient processing patterns for large-volume email workloads.'},
+ {id:'worker',x:456,y:34,t:'Sender worker',s:'Spring Boot consumer',aws:false,
+  d:'Pulls messages, renders the template, calls SES SendEmail with the right configuration set and message tags, and paces itself under the account send rate. Throttling errors are retried with backoff.',
+  jd:'Support both individual and batch communication processing for high-volume enterprise workloads.'},
+ {id:'ses',x:604,y:34,t:'Amazon SES',s:'config sets · IP pools',aws:true,
+  d:'Signs with DKIM, sends from the IP pool chosen by the configuration set, and publishes every event (send, delivery, bounce, complaint, reject, open, click) to the event destination.',
+  jd:'Lead the implementation and configuration of Amazon SES, including verified domains, configuration sets, dedicated IP strategy, sending pools and traffic segmentation.'},
+ {id:'mbp',x:752,y:34,t:'Mailbox providers',s:'Gmail, Outlook, gateways',aws:false,
+  d:'Gmail, Yahoo, Microsoft and corporate gateways (Proofpoint, Mimecast) decide inbox, spam or reject based on authentication and the sender reputation you have built.',
+  jd:'Experience troubleshooting deliverability issues involving major mailbox providers and enterprise email gateways.'},
+ {id:'tpl',x:160,y:172,t:'Template store',s:'S3 + DB, versioned',aws:true,
+  d:'Templates with merge fields, branding and per-line-of-business variants. Versioned so you can prove which wording a member received.',
+  jd:'Develop reusable communication services supporting templates, variables, merge fields, business rules, branding.'},
+ {id:'supp',x:308,y:172,t:'Suppression list',s:'DynamoDB or RDS',aws:true,
+  d:'Your own list of addresses that must never be sent to again, plus SES account-level suppression. Checked before enqueue so bad addresses cost nothing.',
+  jd:'Suppression management.'},
+ {id:'dlq',x:456,y:172,t:'Dead-letter queue',s:'poison messages',aws:true,
+  d:'Messages that failed after N attempts land here with the error. Alarmed, inspected and replayed by operations, never silently lost.',
+  jd:'Retry and exception-processing patterns.'},
+ {id:'dns',x:752,y:172,t:'DNS (Route 53)',s:'SPF · DKIM · DMARC',aws:true,
+  d:'Receivers look up SPF on the Return-Path domain, the DKIM public key, and the DMARC policy for the From domain. See tab 3.',
+  jd:'Own the email domain authentication strategy: SPF, DKIM, DMARC, Return-Path / MAIL FROM, domain alignment.'},
+ {id:'cw',x:12,y:312,t:'CloudWatch',s:'dashboards · alarms',aws:true,
+  d:'Bounce and complaint rate alarms well below SES limits, queue depth, DLQ count, send latency. Pages someone before AWS does.',
+  jd:'Establish logging, tracing, alerting, and production support standards for the platform.'},
+ {id:'db',x:160,y:312,t:'Status database',s:'RDS / Aurora',aws:true,
+  d:'One row per message with its lifecycle: ACCEPTED, SENT, DELIVERED, BOUNCED, COMPLAINED. Feeds reporting and daily reconciliation with the calling systems.',
+  jd:'Integrate email delivery events into application databases, dashboards, reporting, reconciliation.'},
+ {id:'proc',x:308,y:312,t:'Event processor',s:'Spring Boot consumer',aws:false,
+  d:'Reads SES events, updates message status, suppresses hard bounces and complainers, counts soft bounces, and is idempotent because SNS can deliver twice.',
+  jd:'Implement event-driven processing for email delivery events and status updates.'},
+ {id:'evq',x:456,y:312,t:'SQS event queue',s:'durable buffer',aws:true,
+  d:'Subscribed to the SNS topic so no event is lost if the processor is down for a deploy.',
+  jd:'Amazon SNS and/or event-driven messaging.'},
+ {id:'sns',x:604,y:312,t:'SNS / EventBridge',s:'SES event destination',aws:true,
+  d:'The configuration set publishes events here. Fan out to the processor queue, a Firehose to S3 for analytics, or both.',
+  jd:'Delivery event tracking.'}
+];
+const svg=$('#arch'), NS='http://www.w3.org/2000/svg';
+nodes.forEach(n=>{
+  const g=document.createElementNS(NS,'g'); g.setAttribute('class','node'+(n.aws?' aws':'')); g.setAttribute('tabindex','0'); g.setAttribute('role','button'); g.setAttribute('aria-label',n.t); g.dataset.id=n.id;
+  g.innerHTML=`<rect x="${n.x}" y="${n.y}" width="128" height="58" rx="5"/><text class="t" x="${n.x+10}" y="${n.y+25}">${esc(n.t)}</text><text class="s" x="${n.x+10}" y="${n.y+43}">${esc(n.s)}</text>`;
+  g.addEventListener('click',()=>selNode(n.id));
+  g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selNode(n.id);}});
+  svg.appendChild(g);
+});
+function selNode(id){
+  const n=nodes.find(x=>x.id===id);
+  svg.querySelectorAll('.node').forEach(g=>g.classList.toggle('sel',g.dataset.id===id));
+  $('#nodeDetail').innerHTML=`<h2>${esc(n.t)} ${n.aws?'<span class="pill info">AWS</span>':'<span class="pill mute">You build it</span>'}</h2><p style="max-width:75ch">${esc(n.d)}</p><div class="jd"><b>Job description:</b> ${esc(n.jd)}</div>`;
+}
+selNode('api');
+
+/* ---------- send simulator ---------- */
+const templates={
+ 'enrollment-confirmation':{name:'Enrollment confirmation',from:'enrollment@notify.acmebenefits.com',
+   subject:'Your {{planName}} enrollment is confirmed',
+   body:'Hi {{firstName}},\n\nYou are enrolled in {{planName}}. Coverage starts {{effectiveDate}}.\nYour member ID is {{memberId}}.\n\nAcme Benefits',
+   vars:{firstName:'Dana',planName:'Gold PPO 2027',effectiveDate:'January 1, 2027',memberId:'AB-448210'}},
+ 'password-reset':{name:'Password reset',from:'security@notify.acmebenefits.com',
+   subject:'Reset your Acme Benefits password',
+   body:'Hi {{firstName}},\n\nUse this link to reset your password. It expires in {{expiresMinutes}} minutes.\n{{resetLink}}\n\nIf you did not ask for this, ignore this email.',
+   vars:{firstName:'Dana',resetLink:'https://member.acmebenefits.com/reset/7f3c9a',expiresMinutes:'30'}},
+ 'payment-receipt':{name:'Premium payment receipt',from:'billing@notify.acmebenefits.com',
+   subject:'Payment received: {{amount}}',
+   body:'Hi {{firstName}},\n\nWe received your premium payment of {{amount}} on {{paidOn}} from the card ending {{last4}}.\n\nAcme Benefits Billing',
+   vars:{firstName:'Dana',amount:'$412.60',paidOn:'November 6, 2026',last4:'4417'}}
+};
+const recipients=[
+ {v:'success@simulator.amazonses.com',o:'deliver',h:'SES mailbox simulator: accepted by the receiving server.'},
+ {v:'bounce@simulator.amazonses.com',o:'hard',h:'SES mailbox simulator: hard bounce, 550 5.1.1 user unknown.'},
+ {v:'complaint@simulator.amazonses.com',o:'complaint',h:'SES mailbox simulator: delivered, then the recipient marks it as spam.'},
+ {v:'suppressionlist@simulator.amazonses.com',o:'acctsupp',h:'SES mailbox simulator: address is on the SES account suppression list.'},
+ {v:'ooto@simulator.amazonses.com',o:'ooto',h:'SES mailbox simulator: delivered, plus an out-of-office auto-reply.'},
+ {v:'dana.full@example-health.org',o:'soft',h:'Lab-only case: mailbox full, 452 4.2.2 temporary failure (soft bounce).'}
+];
+const tplSel=$('#tpl'), rSel=$('#rcpt'), varsEl=$('#vars');
+Object.entries(templates).forEach(([k,t])=>tplSel.add(new Option(t.name+' ('+k+')',k)));
+recipients.forEach(r=>rSel.add(new Option(r.v,r.v)));
+function loadVars(){ varsEl.value=JSON.stringify(templates[tplSel.value].vars,null,2); }
+function rHint(){ $('#rcptHint').textContent=recipients.find(r=>r.v===rSel.value).h; }
+tplSel.addEventListener('change',loadVars); rSel.addEventListener('change',rHint); loadVars(); rHint();
+
+const steps=[
+ ['Receive request','POST /v1/communications','API'],
+ ['Validate + idempotency','schema, required merge fields, Idempotency-Key','API'],
+ ['Suppression check','platform list lookup','API'],
+ ['Render template','merge fields into subject and body','Worker'],
+ ['Enqueue','SQS send queue','SQS'],
+ ['Send via SES','SendEmail with configuration set','SES'],
+ ['Mailbox provider','authentication, filtering, delivery','Internet'],
+ ['Process event','SNS → SQS → event processor','Events']
+];
+function drawPipe(state){
+  $('#pipe').innerHTML=steps.map((s,i)=>{
+    const st=state[i]||{}; const cls=st.c||'';
+    const sym=cls==='done'?'✓':cls==='fail'?'✕':(i+1);
+    return `<li class="${cls}"><span class="dot">${sym}</span><div><div class="stepname">${s[0]}</div><div class="stepdetail">${esc(st.d||s[1])}</div></div><span class="svc">${s[2]}</span></li>`;
+  }).join('');
+}
+drawPipe([]);
+
+let M={sent:0,del:0,bounce:0,complaint:0};
+let supp=new Map(); // addr -> reason
+let soft=new Map();
+let seq=1000;
+const logRows=[];
+function now(){return new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});}
+function msgId(){seq++; return '0100019a'+(seq.toString(16))+'-'+Math.random().toString(16).slice(2,10);}
+function addLog(id,r,ev,act,kind){
+  logRows.unshift({t:now(),id,r,ev,act,kind}); if(logRows.length>40) logRows.pop();
+  $('#log').innerHTML=logRows.map(l=>`<tr><td>${l.t}</td><td>${esc(l.id.slice(0,14))}…</td><td>${esc(l.r)}</td><td><span class="pill ${l.kind}">${esc(l.ev)}</span></td><td>${esc(l.act)}</td></tr>`).join('');
+}
+function renderSupp(){
+  $('#suppCount').textContent=supp.size;
+  const arr=[...supp.entries()].slice(-60).reverse();
+  $('#suppList').innerHTML = arr.length? arr.map(([a,why])=>`<li><span>${esc(a)}<br><span class="hint">${esc(why)}</span></span><button class="small" data-unsupp="${esc(a)}">Remove</button></li>`).join('') + (supp.size>60?`<li class="hint">…and ${supp.size-60} more</li>`:'') : '<li class="hint" style="font-family:var(--f-body)">Empty. Send to bounce@ or complaint@ to add one.</li>';
+}
+$('#suppList').addEventListener('click',e=>{const a=e.target.dataset.unsupp; if(a){supp.delete(a); soft.delete(a); renderSupp();}});
+function renderMetrics(){
+  const br=M.sent?M.bounce/M.sent*100:0, cr=M.sent?M.complaint/M.sent*100:0;
+  $('#mSent').textContent=M.sent.toLocaleString(); $('#mDel').textContent=M.del.toLocaleString();
+  $('#mBr').textContent=br.toFixed(2)+'%'; $('#mCr').textContent=cr.toFixed(3)+'%';
+  const gB=$('#gB'), gC=$('#gC');
+  gB.style.width=Math.min(100,br/12*100)+'%'; gC.style.width=Math.min(100,cr/0.6*100)+'%';
+  gB.style.background= br>=10?'var(--bad)':br>=5?'var(--warn)':'var(--ok)';
+  gC.style.background= cr>=0.5?'var(--bad)':cr>=0.1?'var(--warn)':'var(--ok)';
+  const s=$('#acctStatus');
+  if(br>=10||cr>=0.5){s.className='pill bad';s.textContent='Sending paused';}
+  else if(br>=5||cr>=0.1){s.className='pill warn';s.textContent='Under review';}
+  else {s.className='pill ok';s.textContent='Healthy';}
+}
+function render(str,vars){return str.replace(/\{\{(\w+)\}\}/g,(m,k)=>vars[k]!==undefined?vars[k]:m);}
+function eventJson(type,id,r,tplKey,stream,extra){
+  const o={eventType:type,mail:{timestamp:new Date().toISOString(),messageId:id,source:templates[tplKey].from,
+    sendingAccountId:'123456789012',destination:[r],
+    tags:{'ses:configuration-set':[stream==='txn'?'pigeon-txn-prod':'pigeon-bulk-prod'],template:[tplKey],correlationId:['req-'+id.slice(-8)]}}};
+  Object.assign(o,extra); return JSON.stringify(o,null,2);
+}
+
+async function sendOne(){
+  const btn=$('#sendBtn'); btn.disabled=true;
+  const tplKey=tplSel.value, t=templates[tplKey], r=rSel.value, rec=recipients.find(x=>x.v===r), stream=$('#stream').value;
+  const st=[]; const set=async(i,c,d)=>{st[i]={c,d};drawPipe(st);await sleep(c==='active'?260:120);};
+  const run=async(i,d)=>{await set(i,'active');await set(i,'done',d);};
+  const failAt=(i,d)=>{st[i]={c:'fail',d};for(let k=i+1;k<steps.length;k++)st[k]={c:'skip'};drawPipe(st);btn.disabled=false;};
+  drawPipe([]);
+  const id=msgId();
+  await run(0,`202 Accepted · requestId req-${id.slice(-8)} · stream ${stream}`);
+  await set(1,'active');
+  let vars; try{vars=JSON.parse(varsEl.value);}catch(e){failAt(1,'400 Bad Request: merge variables are not valid JSON');addLog(id,r,'Rejected','400 returned to caller, nothing queued','bad');return;}
+  const need=Object.keys(t.vars).filter(k=>vars[k]===undefined||vars[k]==='');
+  if(need.length){failAt(1,'400 Bad Request: missing merge field '+need.join(', '));addLog(id,r,'Rejected','Validation failed: '+need.join(', '),'bad');return;}
+  await set(1,'done','schema ok · Idempotency-Key stored');
+  await set(2,'active');
+  if(supp.has(r)){failAt(2,'SUPPRESSED: '+supp.get(r)+'. Request stored with status SUPPRESSED, no SES call made.');addLog(id,r,'Suppressed','Blocked before send, caller notified','warn');return;}
+  await set(2,'done','not on platform suppression list');
+  const subj=render(t.subject,vars), body=render(t.body,vars);
+  await run(3,`${tplKey} v7 · ${Object.keys(vars).length} fields merged`);
+  $('#mail').innerHTML=`<div class="hdr"><b>From</b><span>Acme Benefits &lt;${esc(t.from)}&gt;</span><b>To</b><span>${esc(r)}</span><b>Subject</b><span>${esc(subj)}</span>${stream==='bulk'?'<b>Headers</b><span>List-Unsubscribe, List-Unsubscribe-Post: One-Click</span>':''}</div><div class="body">${esc(body)}</div>`;
+  await run(4,'SQS MessageId sqs-'+id.slice(-6)+' · status QUEUED');
+  M.sent++;
+  await run(5,`SES MessageId ${id.slice(0,22)}… · config set ${stream==='txn'?'pigeon-txn-prod (dedicated pool)':'pigeon-bulk-prod (shared pool)'}`);
+  await set(6,'active');
+  let ev, act, kind, pdetail;
+  switch(rec.o){
+   case 'deliver':
+    M.del++; pdetail='250 2.0.0 OK · DKIM pass, SPF pass, DMARC pass';
+    ev=eventJson('Delivery',id,r,tplKey,stream,{delivery:{timestamp:new Date().toISOString(),processingTimeMillis:742,recipients:[r],smtpResponse:'250 2.0.0 OK',reportingMTA:'a8-31.smtp-out.amazonses.com'}});
+    act='Status DELIVERED'; kind='ok'; break;
+   case 'ooto':
+    M.del++; pdetail='250 OK, then an auto-reply arrives at the Return-Path';
+    ev=eventJson('Delivery',id,r,tplKey,stream,{delivery:{timestamp:new Date().toISOString(),processingTimeMillis:690,recipients:[r],smtpResponse:'250 2.0.0 OK'}});
+    act='Status DELIVERED; auto-reply ignored, never suppress'; kind='ok'; break;
+   case 'complaint':
+    M.del++; M.complaint++; supp.set(r,'Complaint (abuse) '+now()); pdetail='Delivered, then the user clicked "Report spam" (feedback loop)';
+    ev=eventJson('Complaint',id,r,tplKey,stream,{complaint:{complainedRecipients:[{emailAddress:r}],timestamp:new Date().toISOString(),feedbackId:'0100019a-fbl-'+seq,complaintFeedbackType:'abuse'}});
+    act='Status COMPLAINED, address suppressed'; kind='bad'; break;
+   case 'hard':
+    M.bounce++; supp.set(r,'Hard bounce 5.1.1 '+now()); pdetail='550 5.1.1 user unknown';
+    ev=eventJson('Bounce',id,r,tplKey,stream,{bounce:{bounceType:'Permanent',bounceSubType:'General',bouncedRecipients:[{emailAddress:r,action:'failed',status:'5.1.1',diagnosticCode:'smtp; 550 5.1.1 user unknown'}],timestamp:new Date().toISOString()}});
+    act='Status BOUNCED, address suppressed, caller told to fix the address'; kind='bad'; break;
+   case 'acctsupp':
+    M.bounce++; supp.set(r,'On SES account suppression list'); pdetail='SES refused: address on account-level suppression list';
+    ev=eventJson('Bounce',id,r,tplKey,stream,{bounce:{bounceType:'Permanent',bounceSubType:'OnAccountSuppressionList',bouncedRecipients:[{emailAddress:r,action:'failed',diagnosticCode:'Amazon SES did not send the message to this address because it is on the suppression list for your account.'}]}});
+    act='Synced to platform suppression list'; kind='bad'; break;
+   case 'soft':{
+    M.bounce++; const n=(soft.get(r)||0)+1; soft.set(r,n); pdetail='452 4.2.2 mailbox full (temporary)';
+    ev=eventJson('Bounce',id,r,tplKey,stream,{bounce:{bounceType:'Transient',bounceSubType:'MailboxFull',bouncedRecipients:[{emailAddress:r,action:'failed',status:'4.2.2',diagnosticCode:'smtp; 452 4.2.2 Mailbox full'}]}});
+    if(n>=3){supp.set(r,'3 soft bounces in 7 days');act=`Soft bounce #${n}: threshold hit, address suppressed`;}
+    else act=`Soft bounce #${n} of 3: retry later, not suppressed yet`;
+    kind='warn'; break;}
+  }
+  const failed=['hard','acctsupp','soft'].includes(rec.o);
+  if(failed){st[6]={c:'fail',d:pdetail};drawPipe(st);await sleep(200);} else await set(6,'done',pdetail);
+  await run(7,act);
+  $('#evt').textContent=ev;
+  addLog(id,r,JSON.parse(ev).eventType+(rec.o==='soft'?' (soft)':''),act,kind);
+  renderSupp(); renderMetrics(); btn.disabled=false;
+}
+$('#sendBtn').addEventListener('click',sendOne);
+
+function batch(dirty){
+  const n=500; let d=0,b=0,c=0,s=0,blocked=0;
+  for(let i=0;i<n;i++){
+    const addr=(dirty?'old':'mem')+Math.floor(Math.random()*90000+10000)+'@example.net';
+    if(supp.has(addr)){blocked++;continue;}
+    M.sent++;
+    const x=Math.random();
+    const hb=dirty?0.11:0.007, sb=dirty?0.02:0.004, cp=dirty?0.006:0.0004;
+    if(x<hb){M.bounce++;b++;supp.set(addr,'Hard bounce 5.1.1 (batch)');}
+    else if(x<hb+sb){M.bounce++;s++;}
+    else {M.del++;d++; if(Math.random()<cp){M.complaint++;c++;supp.set(addr,'Complaint (batch)');}}
+  }
+  addLog(msgId(),dirty?'500 × old purchased list':'500 × current members','Batch',`${d} delivered · ${b} hard · ${s} soft · ${c} complaints${blocked?` · ${blocked} suppressed before send`:''}`,dirty?'bad':'ok');
+  renderSupp(); renderMetrics();
+}
+$('#batchClean').addEventListener('click',()=>batch(false));
+$('#batchDirty').addEventListener('click',()=>batch(true));
+$('#resetBtn').addEventListener('click',()=>{M={sent:0,del:0,bounce:0,complaint:0};supp.clear();soft.clear();logRows.length=0;$('#log').innerHTML='';$('#evt').textContent='// no events yet';drawPipe([]);renderSupp();renderMetrics();});
+renderSupp(); renderMetrics();
+
+/* ---------- auth ---------- */
+const orgOf=d=>d.toLowerCase().split('.').filter(Boolean).slice(-2).join('.');
+function evalAuth(){
+  const from=($('#fromDom').value||'notify.acmebenefits.com').trim().toLowerCase();
+  const dkim=$('#aDkim').checked, mf=$('#aMf').checked, spf=$('#aSpf').checked, pol=$('#aDmarc').value;
+  const org=orgOf(from), mfDom='bounce.'+from, rp=mf?mfDom:'us-east-1.amazonses.com';
+  const spfPass = mf?spf:true, spfAligned = mf&&spf&&orgOf(rp)===org;
+  const dkimDom = dkim?from:'amazonses.com', dkimAligned = dkim;
+  const dmPass = spfAligned||dkimAligned;
+  const card=(name,state,label,txt)=>`<div class="check"><div class="top"><h3 style="margin:0">${name}</h3><span class="pill ${state}">${label}</span></div><p>${txt}</p></div>`;
+  $('#checks').innerHTML=
+    card('SPF', spfPass?(spfAligned?'ok':'warn'):'bad', spfPass?(spfAligned?'pass · aligned':'pass · not aligned'):'fail',
+      spfPass? `Checked on Return-Path <code>${esc(rp)}</code>. ${spfAligned?'Same organization as the From domain.':'That domain belongs to AWS, not you.'}` : `MAIL FROM <code>${esc(mfDom)}</code> has no SPF record, so the check fails.`)+
+    card('DKIM', dkimAligned?'ok':'warn', dkimAligned?'pass · aligned':'pass · not aligned',
+      `Signature d=<code>${esc(dkimDom)}</code>. ${dkimAligned?'Matches the From domain.':'SES signs with its own domain when yours is not set up.'}`)+
+    card('DMARC', pol==='missing'?'bad':(dmPass?'ok':'bad'), pol==='missing'?'no record':(dmPass?'pass':'fail'),
+      pol==='missing'?`No record at <code>_dmarc.${esc(from)}</code> or <code>_dmarc.${esc(org)}</code>.`:`Needs SPF or DKIM aligned with <code>${esc(org)}</code>. Policy p=${pol}.`);
+  const v=$('#verdict');
+  let cls,head,txt;
+  if(pol==='missing'){cls='bad';head='Will be rejected at volume';txt='Gmail and Yahoo require a DMARC record from anyone sending 5,000+ messages a day. Publish at least p=none and collect reports.';}
+  else if(dmPass && pol!=='none'){cls='ok';head='Authenticated and enforced';txt=`Mail from ${from} passes DMARC${spfAligned&&dkimAligned?' on both SPF and DKIM':''}, and spoofed mail using your domain will be ${pol==='reject'?'rejected':'sent to spam'}.`;}
+  else if(dmPass){cls='warn';head='Passing, but not protected';txt='Your mail passes, yet p=none tells receivers to do nothing about spoofed mail. Move to quarantine, then reject, once aggregate reports show every legitimate sender aligned.';}
+  else if(pol==='reject'){cls='bad';head='Your own email will be rejected';txt='Neither SPF nor DKIM aligns with the From domain, and p=reject tells receivers to bounce it. Enrollment emails would fail on day one.';}
+  else if(pol==='quarantine'){cls='bad';head='Your own email goes to spam';txt='Nothing aligns, and p=quarantine sends failing mail to the junk folder.';}
+  else {cls='warn';head='Delivered for now, flagged in reports';txt='Nothing aligns. p=none keeps mail flowing, but bulk sender rules require alignment and inbox placement will suffer.';}
+  v.className='verdict '+cls; v.innerHTML=`<h2 style="margin:0 0 4px">${esc(head)}</h2><p style="margin:0">${esc(txt)}</p>`;
+  const tok=['x7k2qd4rnm','p9hv3ta6wl','c4yz8fej2s'];
+  const rows=[];
+  tok.forEach((t,i)=>rows.push({ok:dkim,p:`Easy DKIM key ${i+1}`,t:'CNAME',n:`${t}._domainkey.${from}`,v:`${t}.dkim.amazonses.com`}));
+  rows.push({ok:mf,p:'MAIL FROM bounces',t:'MX',n:mfDom,v:'10 feedback-smtp.us-east-1.amazonses.com'});
+  rows.push({ok:mf&&spf,p:'SPF',t:'TXT',n:mfDom,v:'"v=spf1 include:amazonses.com ~all"'});
+  rows.push({ok:pol!=='missing',p:'DMARC',t:'TXT',n:`_dmarc.${from}`,v:`"v=DMARC1; p=${pol==='missing'?'none':pol}; rua=mailto:dmarc-reports@${org}; adkim=r; aspf=r"`});
+  $('#dnsRows').innerHTML=rows.map(r=>`<tr class="${r.ok?'':'missing'}"><td>${r.p}</td><td class="mono">${r.t}</td><td class="mono">${esc(r.n)}</td><td class="mono">${esc(r.v)}</td></tr>`).join('');
+  $('#authHdr').textContent=
+`Authentication-Results: mx.google.com;
+   dkim=pass header.i=@${dkimDom} header.s=${dkim?tok[0]:'224i4yxa5dv7c2xz3womw6peuasteono'};
+   spf=${spfPass?'pass':'fail'} (google.com: domain of ${rp} ${spfPass?'designates 54.240.8.12 as permitted sender':'does not designate 54.240.8.12 as permitted sender'}) smtp.mailfrom=${rp};
+   dmarc=${pol==='missing'?'none':(dmPass?'pass':'fail')} (p=${pol==='missing'?'NONE':pol.toUpperCase()} dis=${pol==='missing'||dmPass?'NONE':pol==='reject'?'REJECT':pol==='quarantine'?'QUARANTINE':'NONE'}) header.from=${from}
+Return-Path: <0100019a...@${rp}>
+From: Acme Benefits <enrollment@${from}>`;
+}
+['#fromDom','#aDkim','#aMf','#aSpf','#aDmarc'].forEach(s=>$(s).addEventListener('input',evalAuth));
+$('#aDmarc').addEventListener('change',evalAuth);
+document.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click',()=>{
+  const p=b.dataset.preset;
+  const P={good:[1,1,1,'reject'],nomf:[0,0,1,'none'],broken:[0,0,1,'reject']}[p];
+  $('#aDkim').checked=!!P[0];$('#aMf').checked=!!P[1];$('#aSpf').checked=!!P[2];$('#aDmarc').value=P[3];evalAuth();
+}));
+evalAuth();
+
+/* ---------- code ---------- */
+const code={
+'CommunicationController.java':{why:'The front door. Accept fast, validate strictly, never block on SES. The idempotency key protects members from duplicate emails when a caller retries after a timeout.',src:
+`@RestController
+@RequestMapping("/v1/communications")
+@RequiredArgsConstructor
+public class CommunicationController {
+
+    private final CommunicationService service;
+
+    // Accepts JSON (and XML via jackson-dataformat-xml) and returns 202 at once.
+    @PostMapping(consumes = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_XML_VALUE})
+    public ResponseEntity<AcceptedResponse> submit(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody CommunicationRequest request) {
+
+        AcceptedResponse resp = service.accept(idempotencyKey, request);
+        return ResponseEntity.accepted().body(resp);   // { requestId, status }
+    }
+
+    @GetMapping("/{requestId}")
+    public CommunicationStatus status(@PathVariable String requestId) {
+        return service.status(requestId);              // ACCEPTED, SENT, DELIVERED, BOUNCED ...
+    }
+}`},
+'CommunicationService.java':{why:'Business rules before anything costs money: dedupe, suppression, template field check, persist, enqueue. Persisting before enqueue gives you a record to reconcile against.',src:
+`@Service
+@RequiredArgsConstructor
+public class CommunicationService {
+
+    private final MessageRepository repo;
+    private final SuppressionService suppression;
+    private final TemplateRegistry templates;
+    private final SqsTemplate sqs;
+
+    @Transactional
+    public AcceptedResponse accept(String key, CommunicationRequest req) {
+        // 1. Idempotency: same key returns the original result, sends nothing new.
+        Optional<MessageRecord> existing = repo.findByIdempotencyKey(key);
+        if (existing.isPresent()) return AcceptedResponse.of(existing.get());
+
+        // 2. Required merge fields for this template version.
+        templates.get(req.templateId()).validate(req.variables());   // throws -> 400
+
+        MessageRecord rec = MessageRecord.newFrom(key, req);
+
+        // 3. Suppression: refuse before spending reputation.
+        if (suppression.isSuppressed(req.recipient())) {
+            rec.markSuppressed(suppression.reason(req.recipient()));
+            repo.save(rec);
+            return AcceptedResponse.of(rec);
+        }
+
+        // 4. Persist, then enqueue (transactional outbox in production).
+        repo.save(rec.markQueued());
+        sqs.send(to -> to.queue("pigeon-send-queue")
+                         .payload(new SendCommand(rec.getId(), req))
+                         .header("stream", req.stream().name()));
+        return AcceptedResponse.of(rec);
+    }
+}`},
+'SesSenderWorker.java':{why:'Where SES is actually called. The configuration set chooses the IP pool and the event destination. Tags flow back on every event so you can join events to your own records. Throttling is retried; other failures go to the dead-letter queue.',src:
+`@Component
+@RequiredArgsConstructor
+@Slf4j
+public class SesSenderWorker {
+
+    private final SesV2Client ses;
+    private final TemplateRenderer renderer;
+    private final MessageRepository repo;
+    private final RateLimiter sesRate;   // e.g. Resilience4j, sized under the account send rate
+
+    @SqsListener(value = "pigeon-send-queue", maxConcurrentMessages = "20")
+    public void handle(SendCommand cmd) {
+        RenderedEmail email = renderer.render(cmd.templateId(), cmd.variables());
+        String configSet = cmd.stream() == Stream.TRANSACTIONAL ? "pigeon-txn-prod" : "pigeon-bulk-prod";
+
+        SendEmailRequest request = SendEmailRequest.builder()
+            .fromEmailAddress(email.from())
+            .destination(Destination.builder().toAddresses(cmd.recipient()).build())
+            .content(EmailContent.builder().simple(Message.builder()
+                .subject(Content.builder().data(email.subject()).charset("UTF-8").build())
+                .body(Body.builder()
+                    .html(Content.builder().data(email.html()).charset("UTF-8").build())
+                    .text(Content.builder().data(email.text()).charset("UTF-8").build())
+                    .build())
+                .build()).build())
+            .configurationSetName(configSet)
+            .emailTags(
+                MessageTag.builder().name("messageRecordId").value(cmd.recordId()).build(),
+                MessageTag.builder().name("template").value(cmd.templateId()).build())
+            .build();
+
+        try {
+            sesRate.acquirePermission();
+            SendEmailResponse resp = ses.sendEmail(request);
+            repo.markSent(cmd.recordId(), resp.messageId());
+            log.info("sent recordId={} sesMessageId={}", cmd.recordId(), resp.messageId());
+        } catch (TooManyRequestsException | LimitExceededException e) {
+            // Throw so SQS redelivers after the visibility timeout (backoff).
+            throw new RetryableSendException(cmd.recordId(), e);
+        } catch (MessageRejectedException | AccountSuspendedException e) {
+            repo.markFailed(cmd.recordId(), e.awsErrorDetails().errorMessage());
+            // Not retryable. Alarm on this metric.
+        }
+    }
+}`},
+'SesEventProcessor.java':{why:'The feedback loop that protects reputation. Hard bounces and complaints are suppressed immediately. Soft bounces are counted, not suppressed. Processing is idempotent because SNS delivers at least once.',src:
+`@Component
+@RequiredArgsConstructor
+@Slf4j
+public class SesEventProcessor {
+
+    private final ObjectMapper json;
+    private final MessageRepository repo;
+    private final SuppressionService suppression;
+    private final ProcessedEventStore processed;
+
+    @SqsListener("pigeon-events-queue")   // subscribed to the SNS topic of the config set
+    public void onEvent(String snsEnvelope) throws Exception {
+        JsonNode ev = json.readTree(json.readTree(snsEnvelope).get("Message").asText());
+        String type = ev.get("eventType").asText();
+        String sesId = ev.at("/mail/messageId").asText();
+
+        if (!processed.firstTime(sesId + ":" + type)) return;   // duplicate delivery
+
+        switch (type) {
+            case "Delivery" -> repo.markDelivered(sesId);
+            case "Bounce" -> {
+                boolean permanent = "Permanent".equals(ev.at("/bounce/bounceType").asText());
+                for (JsonNode r : ev.at("/bounce/bouncedRecipients")) {
+                    String addr = r.get("emailAddress").asText();
+                    if (permanent) {
+                        suppression.add(addr, Reason.HARD_BOUNCE, r.path("diagnosticCode").asText());
+                    } else if (suppression.incrementSoft(addr) >= 3) {
+                        suppression.add(addr, Reason.REPEATED_SOFT_BOUNCE, "3 in 7 days");
+                    }
+                }
+                repo.markBounced(sesId, permanent);
+            }
+            case "Complaint" -> {
+                for (JsonNode r : ev.at("/complaint/complainedRecipients")) {
+                    suppression.add(r.get("emailAddress").asText(), Reason.COMPLAINT, "feedback loop");
+                }
+                repo.markComplained(sesId);
+            }
+            case "Reject", "RenderingFailure" -> repo.markFailed(sesId, type);
+            default -> log.debug("ignored eventType={}", type);
+        }
+    }
+}`},
+'application.yml':{why:'Configuration a reviewer looks for: region, queue names, concurrency, and no credentials in the file (the task role supplies them).',src:
+`spring:
+  application:
+    name: pigeon
+  cloud:
+    aws:
+      region:
+        static: us-east-1
+      # No keys here: ECS task role / EKS IRSA provides credentials.
+      sqs:
+        listener:
+          max-concurrent-messages: 20
+          max-messages-per-poll: 10
+
+email:
+  streams:
+    transactional:
+      configuration-set: pigeon-txn-prod      # dedicated IP pool, events -> SNS
+      from-domain: notify.acmebenefits.com
+    bulk:
+      configuration-set: pigeon-bulk-prod     # shared pool, List-Unsubscribe required
+      from-domain: news.acmebenefits.com
+  suppression:
+    soft-bounce-threshold: 3
+    soft-bounce-window: 7d
+  send-rate-per-second: 250            # stay under the SES account max send rate
+
+management:
+  endpoints.web.exposure.include: health,metrics,prometheus`},
+'iam-policy.json':{why:'Least privilege: the sender may send only from your verified identity and only through your configuration sets.',src:
+`{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SendThroughOwnIdentityOnly",
+      "Effect": "Allow",
+      "Action": ["ses:SendEmail", "ses:SendRawEmail"],
+      "Resource": [
+        "arn:aws:ses:us-east-1:123456789012:identity/notify.acmebenefits.com",
+        "arn:aws:ses:us-east-1:123456789012:configuration-set/pigeon-txn-prod",
+        "arn:aws:ses:us-east-1:123456789012:configuration-set/pigeon-bulk-prod"
+      ],
+      "Condition": {
+        "StringLike": { "ses:FromAddress": "*@notify.acmebenefits.com" }
+      }
+    },
+    {
+      "Sid": "ConsumeQueues",
+      "Effect": "Allow",
+      "Action": ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility", "sqs:SendMessage"],
+      "Resource": "arn:aws:sqs:us-east-1:123456789012:pigeon-*"
+    }
+  ]
+}`}
+};
+const codeSel=$('#codeSel');
+Object.keys(code).forEach(k=>codeSel.add(new Option(k,k)));
+function hl(src){
+  return src.split('\n').map(line=>{
+    let l=esc(line);
+    const ci=l.search(/(\/\/|^\s*#)/);
+    let tail='';
+    if(ci>=0 && !/"[^"]*\/\/[^"]*"/.test(l)){tail='<span class="c">'+l.slice(ci)+'</span>';l=l.slice(0,ci);}
+    l=l.replace(/("[^"]*")/g,'<span class="s">$1</span>').replace(/(^|\s)(@\w+)/g,'$1<span class="a">$2</span>');
+    return l+tail;
+  }).join('\n');
+}
+function showCode(){const c=code[codeSel.value]; $('#codeBox').innerHTML=hl(c.src); $('#codeWhy').innerHTML=`<h3>Why it looks like this</h3><p style="font-size:15px">${esc(c.why)}</p>`;}
+codeSel.addEventListener('change',showCode); showCode();
+
+/* ---------- playbook ---------- */
+const ck=[
+ 'Production access requested; out of the SES sandbox',
+ 'Send quota and max send rate sized for open-enrollment peak',
+ 'Domain identity verified with Easy DKIM (2048-bit)',
+ 'Custom MAIL FROM subdomain with MX and SPF',
+ 'DMARC at p=none with rua reports, plan to reach p=reject',
+ 'Separate subdomains and configuration sets per stream',
+ 'Dedicated IP decision made; warm-up plan if used',
+ 'Event destination to SNS/EventBridge for every event type',
+ 'Suppression service live and checked before every send',
+ 'Alarms: bounce > 2%, complaint > 0.05%, DLQ > 0, queue age',
+ 'Virtual Deliverability Manager enabled for inbox insight',
+ 'Runbook for reputation incidents and DNS changes'
+];
+const done=new Set();
+function drawCk(){
+  $('#ck').innerHTML=ck.map((t,i)=>`<label><input type="checkbox" id="ck${i}" ${done.has(i)?'checked':''}> <span>${esc(t)}</span></label>`).join('');
+  $('#ckProg').textContent=`${done.size} of ${ck.length} ready`;
+}
+$('#ck').addEventListener('change',e=>{const i=+e.target.id.slice(2); e.target.checked?done.add(i):done.delete(i); $('#ckProg').textContent=`${done.size} of ${ck.length} ready`;});
+drawCk();
+const qa=[
+ ['Walk me through what happens after an app asks to send an email.','The API validates the request, checks the idempotency key and suppression list, stores a record and puts a message on SQS, returning 202. A worker renders the template and calls SES with a configuration set. SES signs with DKIM and delivers. Delivery, bounce and complaint events come back through SNS to an SQS queue, and a processor updates the record and the suppression list. Dashboards and reconciliation read from that record.'],
+ ['SPF passes and DKIM passes. Why would DMARC fail?','Alignment. DMARC needs a passing SPF or DKIM result for the same organizational domain as the From header. With SES defaults, SPF passes for amazonses.com and the DKIM signature can be amazonses.com too. Fix it with Easy DKIM on our domain and a custom MAIL FROM subdomain.'],
+ ['How do you handle bounces?','Permanent (5xx) bounces suppress the address immediately and tell the source system its data is bad. Transient (4xx) bounces are counted; after about three in a week we suppress. SES already retries transient failures for a while before it reports them, so we do not resend blindly.'],
+ ['Dedicated IPs or shared?','Shared pools are fine below steady volume because AWS manages their reputation. Dedicated IPs make sense with consistent high volume where we want our reputation isolated. If we go dedicated, either managed dedicated IPs or a warm-up plan, and transactional and bulk on separate pools.'],
+ ['How would you migrate off an existing email platform?','Set up DNS and identities first. Then move traffic gradually per stream and per domain, low risk first, ramping volume as SES and mailbox metrics stay healthy. Import the old platform\'s suppression list on day one so we never email someone who already complained.'],
+ ['How do you make the platform resilient?','Queues between every stage, idempotent consumers, retries with backoff on throttling, dead-letter queues with alarms, a transactional outbox so a record and its message cannot drift, and rate limiting under the SES send rate.'],
+ ['Gmail is putting our mail in spam. What do you check?','Authentication results in the headers, Google Postmaster Tools spam rate and domain reputation, recent changes in content or volume, which stream it is, list hygiene and complaint trends, and whether bulk mail has one-click unsubscribe.'],
+ ['How do you explain this risk to a business stakeholder?','In outcomes. For example: if the enrollment list from the old system has 10% bad addresses, AWS will pause all our email, including password resets. One week of list cleanup before go-live removes that risk.']
+];
+$('#qa').innerHTML=qa.map(([q,a])=>`<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('');
+})();
+</script>
+</body>
+</html>
