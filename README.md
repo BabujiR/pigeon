@@ -5,8 +5,131 @@ An enterprise transactional email platform built with Java 21 and Spring Boot 3:
 sending through SQS, event-driven bounce and complaint processing, suppression management,
 reputation monitoring, and SPF / DKIM / DMARC domain authentication.
 
-> Status: **Phase 0 (Foundation)**. The full README with architecture diagram and "Try it"
-> scenarios arrives in Phase 7.
+## Build status
+| Phase | Scope | Status |
+|---|---|---|
+| 0 | Project skeleton, Docker, LocalStack resources, health check | Done |
+| 1 | Database schema, seeded templates, TemplateRenderer | Done |
+| 2 | Communication API: validation, idempotency, suppression check, outbox | Planned |
+| 3 | Sender worker calling SES, rate limiting, retries, DLQ | Planned |
+| 4 | Event pipeline, suppression rules, local event simulator | Planned |
+| 5 | Reputation metrics, suppression API, batch sending | Planned |
+| 6 | Structured logging, PII masking, error handling | Planned |
+| 7 | Docs, demo scripts, full run-through | Planned |
+
+## Architecture
+
+Solid arrows carry an email out. Dashed arrows carry delivery events back.
+
+```mermaid
+flowchart LR
+    client["Client apps<br/>enrollment, billing"]
+
+    subgraph pigeon["Pigeon (Spring Boot)"]
+        api["Communication API<br/>POST /v1/communications"]
+        relay["Outbox relay"]
+        worker["Sender worker"]
+        processor["Event processor"]
+        metrics["Metrics API<br/>GET /v1/metrics"]
+    end
+
+    subgraph data["PostgreSQL"]
+        db[("message_record · message_event<br/>idempotency_key · outbox<br/>template · template_version")]
+        supp[("suppression · soft_bounce<br/>processed_event")]
+    end
+
+    subgraph aws["AWS (LocalStack locally)"]
+        sendq[["SQS<br/>pigeon-send-queue"]]
+        senddlq[["SQS<br/>pigeon-send-dlq"]]
+        ses["Amazon SES<br/>pigeon-txn-prod · pigeon-bulk-prod"]
+        topic(["SNS<br/>pigeon-events-topic"])
+        evq[["SQS<br/>pigeon-events-queue"]]
+        evdlq[["SQS<br/>pigeon-events-dlq"]]
+    end
+
+    inbox["Mailbox providers<br/>Gmail, Outlook, gateways"]
+
+    client -->|"1 request + Idempotency-Key"| api
+    api -->|"2 check"| supp
+    api -->|"3 record + outbox row<br/>(one transaction)"| db
+    api -.->|"202 requestId"| client
+    relay -->|"4 poll pending"| db
+    relay -->|"5 publish"| sendq
+    sendq -->|"6 consume"| worker
+    worker -->|"7 render active version"| db
+    worker -->|"8 SendEmail"| ses
+    sendq -->|"after 3 failures"| senddlq
+    ses -->|"9 deliver, DKIM-signed"| inbox
+
+    ses -.->|"10 delivery / bounce / complaint"| topic
+    topic -.-> evq
+    evq -.->|"11 consume"| processor
+    evq -.->|"after 3 failures"| evdlq
+    processor -.->|"12 update status + history"| db
+    processor -.->|"13 suppress hard bounces<br/>and complaints"| supp
+    metrics --- db
+
+    classDef awsNode fill:#fff4e5,stroke:#d9822b,color:#1b2430
+    classDef appNode fill:#e8eefc,stroke:#2b4fc4,color:#1b2430
+    classDef dataNode fill:#eaf6ef,stroke:#1d7347,color:#1b2430
+    class sendq,senddlq,ses,topic,evq,evdlq awsNode
+    class api,relay,worker,processor,metrics appNode
+    class db,supp dataNode
+```
+
+### One email, start to finish
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client app
+    participant A as Communication API
+    participant DB as PostgreSQL
+    participant Q as pigeon-send-queue
+    participant W as Sender worker
+    participant S as Amazon SES
+    participant E as SNS → pigeon-events-queue
+    participant P as Event processor
+
+    C->>A: POST /v1/communications (Idempotency-Key)
+    A->>DB: Key seen before? Address suppressed?
+    A->>DB: Insert message_record (ACCEPTED) + outbox row
+    A-->>C: 202 Accepted { requestId }
+    Note over DB,Q: Outbox relay publishes pending rows
+    DB->>Q: SendCommand
+    Q->>W: Receive message
+    W->>DB: Load template version, render
+    W->>S: SendEmail (configuration set, tags)
+    S-->>W: SES MessageId
+    W->>DB: Status SENT
+    S-)E: Delivery / Bounce / Complaint event
+    E->>P: Receive event
+    P->>DB: Already processed? Skip
+    P->>DB: Status DELIVERED / BOUNCED / COMPLAINED
+    P->>DB: Hard bounce or complaint → suppression
+```
+
+### Why it is built this way
+| Decision | Reason |
+|---|---|
+| API returns 202 and queues the work | Callers never wait on SES; open-enrollment spikes are absorbed by SQS |
+| Idempotency-Key on every request | A caller retrying after a timeout never sends a member a duplicate email |
+| Transactional outbox | The message row and its queue message commit together, so neither can exist without the other |
+| Suppression checked before queueing | Known-bad addresses cost nothing and never touch sender reputation |
+| Two configuration sets | Transactional and bulk mail keep separate reputations; a bad campaign cannot hurt password resets |
+| Dead-letter queue after 3 attempts | Failing messages are kept for inspection and replay, never silently lost |
+| Events processed idempotently | SNS delivers at least once; a redelivered bounce must not be counted twice |
+| Versioned templates | Every message records the exact wording it was sent with |
+
+### Local vs AWS
+| Concern | Local (this repo) | AWS |
+|---|---|---|
+| SES, SQS, SNS | LocalStack 4.14 on port 4566 | Real services, IAM role credentials |
+| Delivery events | `LocalEventSimulator` publishes SES-format events (Phase 4) | SES configuration set event destination → SNS |
+| Database | Postgres 16 container | Amazon RDS / Aurora PostgreSQL |
+| Domain authentication | Not needed | SPF, DKIM (Easy DKIM), custom MAIL FROM, DMARC |
+
+The full schema is in [docs/SCHEMA.md](docs/SCHEMA.md).
 
 ## Prerequisites
 - Java 21, Maven 3.9+ (`mvn -v` must show Java 21)
@@ -21,7 +144,7 @@ mvn spring-boot:run "-Dspring-boot.run.profiles=local"
 ```
 In IntelliJ, use the **Pigeon (local)** run configuration instead of the last line.
 
-## Check Phase 0
+## Check it is running
 ```powershell
 # Resources created by localstack/init/ready.d/01-pigeon-resources.sh
 docker logs pigeon-localstack 2>&1 | Select-String "pigeon-init"
