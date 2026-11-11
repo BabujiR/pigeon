@@ -17,9 +17,88 @@ reputation monitoring, and SPF / DKIM / DMARC domain authentication.
 | 6 | Structured logging, PII masking, error handling | Planned |
 | 7 | Docs, demo scripts, full run-through | Planned |
 
+## Pigeon Lab (interactive)
+
+Start the app and open **http://localhost:8080/**. The lab is served by Pigeon itself
+(`src/main/resources/static/index.html`) and runs entirely in your browser:
+
+| Tab | What you can do |
+|---|---|
+| 1. Architecture | The platform on one page. Select any component to see its job and the requirement it covers |
+| 2. Send simulator | Send to the SES mailbox simulator addresses, watch each pipeline step, the SES event JSON, suppression and reputation rates; push a clean or dirty batch |
+| 3. Domain authentication | Toggle Easy DKIM, custom MAIL FROM, SPF and the DMARC policy; see alignment, the DNS records and Gmail's header |
+| 4. Java code | Reference Spring Boot code for each component, with review notes |
+| 5. Lead playbook | Production readiness checklist, numbers to know, risks and interview questions |
+
 ## Architecture
 
 Solid arrows carry an email out. Dashed arrows carry delivery events back.
+
+Two versions of the overview are below. Pick the one you prefer and delete the other.
+
+### Option A: detailed (component groups)
+
+Shows which parts are Pigeon code, PostgreSQL and AWS, splits the database into messaging and reputation tables, and includes the Metrics API.
+
+```mermaid
+flowchart LR
+    client["Client apps<br/>enrollment, billing"]
+
+    subgraph pigeon["Pigeon (Spring Boot)"]
+        api["Communication API<br/>POST /v1/communications"]
+        relay["Outbox relay"]
+        worker["Sender worker"]
+        processor["Event processor"]
+        metrics["Metrics API<br/>GET /v1/metrics"]
+    end
+
+    subgraph data["PostgreSQL"]
+        db[("message_record · message_event<br/>idempotency_key · outbox<br/>template · template_version")]
+        supp[("suppression · soft_bounce<br/>processed_event")]
+    end
+
+    subgraph aws["AWS (LocalStack locally)"]
+        sendq[["SQS<br/>pigeon-send-queue"]]
+        senddlq[["SQS<br/>pigeon-send-dlq"]]
+        ses["Amazon SES<br/>pigeon-txn-prod · pigeon-bulk-prod"]
+        topic(["SNS<br/>pigeon-events-topic"])
+        evq[["SQS<br/>pigeon-events-queue"]]
+        evdlq[["SQS<br/>pigeon-events-dlq"]]
+    end
+
+    inbox["Mailbox providers<br/>Gmail, Outlook, gateways"]
+
+    client -->|"1 request + Idempotency-Key"| api
+    api -->|"2 check"| supp
+    api -->|"3 record + outbox row<br/>(one transaction)"| db
+    api -.->|"202 requestId"| client
+    relay -->|"4 poll pending"| db
+    relay -->|"5 publish"| sendq
+    sendq -->|"6 consume"| worker
+    worker -->|"7 render active version"| db
+    worker -->|"8 SendEmail"| ses
+    sendq -->|"after 3 failures"| senddlq
+    ses -->|"9 deliver, DKIM-signed"| inbox
+
+    ses -.->|"10 delivery / bounce / complaint"| topic
+    topic -.-> evq
+    evq -.->|"11 consume"| processor
+    evq -.->|"after 3 failures"| evdlq
+    processor -.->|"12 update status + history"| db
+    processor -.->|"13 suppress hard bounces<br/>and complaints"| supp
+    metrics --- db
+
+    classDef awsNode fill:#fff4e5,stroke:#d9822b,color:#1b2430
+    classDef appNode fill:#e8eefc,stroke:#2b4fc4,color:#1b2430
+    classDef dataNode fill:#eaf6ef,stroke:#1d7347,color:#1b2430
+    class sendq,senddlq,ses,topic,evq,evdlq awsNode
+    class api,relay,worker,processor,metrics appNode
+    class db,supp dataNode
+```
+
+### Option B: simplified (top to bottom)
+
+One straight send path with the event loop returning to the database. Easier to read on a small screen or in a slide.
 
 ```mermaid
 flowchart TB
