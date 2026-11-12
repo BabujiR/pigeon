@@ -3,6 +3,7 @@ package com.pigeon.message;
 import com.pigeon.config.PigeonAwsProperties;
 import com.pigeon.suppression.Suppression;
 import com.pigeon.suppression.SuppressionService;
+import com.pigeon.support.Pii;
 import com.pigeon.template.TemplateRenderer;
 import com.pigeon.template.TemplateService;
 import com.pigeon.template.TemplateVersion;
@@ -14,8 +15,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -40,6 +45,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class CommunicationService {
 
     public static final int MAX_KEY_LENGTH = 200;
+    private static final Logger log = LoggerFactory.getLogger(CommunicationService.class);
 
     private final MessageRecordRepository messages;
     private final MessageEventRepository events;
@@ -85,14 +91,20 @@ public class CommunicationService {
             throw new InvalidIdempotencyKeyException(MAX_KEY_LENGTH);
         }
         String fingerprint = RequestFingerprint.of(templateId, recipient, stream, variables);
+        AcceptResult result;
         try {
-            return tx.execute(status -> acceptInTransaction(
+            result = tx.execute(status -> acceptInTransaction(
                     idempotencyKey, fingerprint, correlationId, templateId, recipient, stream, variables));
         } catch (DataIntegrityViolationException raceLost) {
             // Another request with the same key committed first. Answer with its result.
-            return readOnlyTx.execute(status -> replay(idempotencyKey, fingerprint))
+            result = readOnlyTx.execute(status -> replay(idempotencyKey, fingerprint))
                     .orElseThrow(() -> raceLost);
         }
+        MessageRecord m = result.message();
+        log.info("Accepted message {} for {}: {} ({} v{}, {}){}", m.getId(), Pii.maskEmail(m.getRecipient()),
+                m.getStatus(), m.getTemplateId(), m.getTemplateVersion(), m.getStream(),
+                result.replayed() ? " [idempotent replay]" : "");
+        return result;
     }
 
     private AcceptResult acceptInTransaction(String key, String fingerprint, String correlationId,
@@ -167,6 +179,14 @@ public class CommunicationService {
             List<MessageEvent> history = events.findByMessageIdOrderByOccurredAtAscIdAsc(id);
             return new MessageView(m, history);
         });
+    }
+
+    /** Newest first, optionally one status only. For operators and the Pigeon Console. */
+    public List<MessageRecord> recent(MessageStatus status, int limit) {
+        PageRequest page = PageRequest.of(0, Math.max(1, Math.min(limit, 200)), Sort.by(Sort.Direction.DESC, "createdAt"));
+        return readOnlyTx.execute(s -> status == null
+                ? messages.findAll(page).getContent()
+                : messages.findByStatus(status, page).getContent());
     }
 
     public record AcceptResult(MessageRecord message, boolean replayed, String suppressionReason) {

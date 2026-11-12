@@ -5,6 +5,23 @@ An enterprise transactional email platform built with Java 21 and Spring Boot 3:
 sending through SQS, event-driven bounce and complaint processing, suppression management,
 reputation monitoring, and SPF / DKIM / DMARC domain authentication.
 
+### Open the apps
+
+Start Pigeon first (`docker compose up -d`, then `mvn spring-boot:run "-Dspring-boot.run.profiles=local"`
+or the **Pigeon (local)** run configuration in IntelliJ). Then click:
+
+| | Link | What it is |
+|---|---|---|
+| ▶ | **[Pigeon Lab (demo)](http://localhost:8080/)** | Teaching demo with its own in-browser simulator |
+| ▶ | **[Pigeon Console (live API)](http://localhost:8080/console)** | Real sends, messages, batches, reputation, suppressions |
+| | [Health](http://localhost:8080/actuator/health) · [Metrics API](http://localhost:8080/v1/metrics) · [Templates API](http://localhost:8080/v1/templates) · [Prometheus](http://localhost:8080/actuator/prometheus) | Raw endpoints |
+| | [LocalStack sent mail](http://localhost:4566/_aws/ses) | Every email SES "sent" locally |
+
+The links work on the machine running Pigeon. **No app running?** The Lab is a single self-contained
+file: open [`src/main/resources/static/index.html`](src/main/resources/static/index.html) from your
+copy of the project (double-click it in Explorer, or right-click it in IntelliJ → *Open In* → *Browser*)
+and it works without Pigeon, Docker or a network.
+
 ## Build status
 | Phase | Scope | Status |
 |---|---|---|
@@ -14,13 +31,39 @@ reputation monitoring, and SPF / DKIM / DMARC domain authentication.
 | 3 | Outbox relay, sender worker calling SES, rate limiting, retries, DLQ | Done |
 | 4 | Event pipeline, suppression rules, local event simulator | Done |
 | 5 | Reputation metrics, suppression API, batch sending | Done |
-| 6 | Structured logging, PII masking, error handling | Planned |
-| 7 | Docs, demo scripts, full run-through | Planned |
+| 6 | Structured logging, correlation ids, PII masking, error handling | Done |
+| 7 | Pigeon Console, DNS and AWS docs, scripted run-through of every scenario | Done |
+
+## Pigeon Console (the real API, in a browser)
+
+**▶ [Open the Pigeon Console](http://localhost:8080/console)** (Pigeon must be running). Every button calls the live API on this
+server; nothing in the page is simulated. (The Pigeon Lab at `/` is a separate, self-contained demo.)
+
+| Tab | What it does | API |
+|---|---|---|
+| Send | Pick a template and a scenario (Delivered, Hard bounce, Complaint, SES suppression list, Mailbox full), send, and watch the status move ACCEPTED → QUEUED → SENT → outcome | `POST /v1/communications`, `GET /v1/communications/{id}` |
+| Messages | Recent messages with a status filter; open one for its full history | `GET /v1/communications?status=&limit=` |
+| Batch | Paste `address, firstName` lines; per-item results | `POST /v1/communications/batch` |
+| Reputation | Status banner, bounce and complaint rates against the SES thresholds, per stream | `GET /v1/metrics` |
+| Suppressions | List, add, remove (complaints ask for confirmation) | `/v1/suppressions` |
+| API activity | Every call the page made: request, response and the same call as a PowerShell command | |
+
+![Send and follow a message](docs/images/console-send.png)
+![Reputation against SES thresholds](docs/images/console-reputation.png)
+![API activity with PowerShell equivalents](docs/images/console-activity.png)
+
+Other clients for the same API: `requests.http` (IntelliJ HTTP client), the PowerShell commands
+in this README and in the console's API activity tab, or any HTTP tool such as Postman or curl.
 
 ## Pigeon Lab (interactive)
 
-Start the app and open **http://localhost:8080/**. The lab is served by Pigeon itself
-(`src/main/resources/static/index.html`) and runs entirely in your browser:
+**▶ [Open the Pigeon Lab](http://localhost:8080/)** (with Pigeon running), or open
+[`src/main/resources/static/index.html`](src/main/resources/static/index.html) straight from the project
+folder; it needs nothing else.
+
+This is a self-contained teaching demo with its own in-browser simulator; it does not call the API
+(use the [Pigeon Console](http://localhost:8080/console) for that). It is served by Pigeon itself from
+`src/main/resources/static/index.html` and runs entirely in your browser:
 
 | Tab | What you can do |
 |---|---|
@@ -364,6 +407,56 @@ retrying with the same `Idempotency-Key` queues nothing twice.
     { "recipient": "bounce+1@simulator.amazonses.com",  "variables": { "firstName": "Ben" } } ] }
 ```
 Response: `202` with `counts` (`QUEUED`, `SUPPRESSED`, `REJECTED`) and a result per item.
+
+## Logs and tracing (Phase 6)
+
+**One id follows each email everywhere.** Send `X-Correlation-Id` (or let Pigeon create one); it is
+returned in the response header, stored on the message, carried on the SQS message and SES tags, and
+printed on every log line from the API, the outbox relay, the sender and the SES event processor:
+
+```
+2026-11-11T22:58:01.114-05:00  INFO [nio-8080-exec-3] [order-4471] []                c.p.message.CommunicationService : Accepted message 3f1c... for d***@example.com: QUEUED (payment-receipt v1, TRANSACTIONAL)
+2026-11-11T22:58:01.632-05:00  INFO [ntainer#0-1-T-1] [order-4471] [3f1c...]          c.pigeon.sender.SendService       : Sent message 3f1c... to d***@example.com via sesv1 (attempt 1, SES id ...)
+2026-11-11T22:58:02.215-05:00  INFO [ntainer#1-1-T-1] [order-4471] [3f1c...]          c.p.events.SesEventProcessor      : SES Delivery event for message 3f1c...: SENT -> DELIVERED
+```
+
+```powershell
+# Follow one request through the logs
+mvn spring-boot:run "-Dspring-boot.run.profiles=local" | Select-String "order-4471"
+```
+
+- **JSON logs for a log platform:** add the `json` profile (`local,json` locally,
+  `SPRING_PROFILES_ACTIVE=json` in production). Lines become Elastic Common Schema JSON, with
+  `correlationId` and `messageId` as fields you can filter on.
+- **No personal data in logs:** addresses are masked (`d***@example.com`), including addresses
+  inside SES error text. Merge values never reach a log or a queue.
+- **Errors you can report:** every error response includes `correlationId`; unexpected errors are a
+  plain 500 with no stack trace or internal detail, while the full exception is logged.
+- **Graceful shutdown:** in-flight requests and SQS messages finish (up to 30s) before the app stops.
+
+## Run every scenario (clean start)
+
+`scripts/run-scenarios.ps1` runs 21 scenarios against the real app and prints PASS or FAIL for each:
+health, templates, delivery, idempotent replay, key reuse, validation errors, XML, BULK, hard bounce
+and suppression, complaint and forced removal, account suppression list, three soft bounces, batch,
+manual suppression, metrics, correlation ids, recent messages, LocalStack's sent mail, and both web pages.
+
+```powershell
+# From a clean slate: wipe containers and database, start everything, run, stop the app
+.\scripts\run-scenarios.ps1 -CleanStart -StartApp
+
+# Against an app that is already running
+.\scripts\run-scenarios.ps1
+```
+
+It writes `target\scenario-report.md` and exits with the number of failures. If Windows blocks the
+script, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
+
+## Going to AWS
+
+- [docs/DNS.md](docs/DNS.md): SPF, Easy DKIM, custom MAIL FROM, DMARC, alignment and a safe DMARC rollout
+- [docs/AWS-DEPLOY.md](docs/AWS-DEPLOY.md): SES identity, sandbox, configuration sets with SNS event
+  destinations, queues, least-privilege IAM, RDS, ECS, alarms and production access
 
 ## Tests
 ```powershell

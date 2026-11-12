@@ -2,10 +2,14 @@ package com.pigeon.api;
 
 import com.pigeon.message.CommunicationService;
 import com.pigeon.message.CommunicationService.AcceptResult;
+import com.pigeon.message.MessageRecord;
+import com.pigeon.message.MessageStatus;
+import com.pigeon.support.CorrelationId;
 import jakarta.validation.Valid;
 import java.net.URI;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
-import java.util.regex.Pattern;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -29,11 +34,8 @@ public class CommunicationController {
 
     static final String BASE_PATH = "/v1/communications";
     static final String IDEMPOTENCY_KEY = "Idempotency-Key";
-    static final String CORRELATION_ID = "X-Correlation-Id";
+    static final String CORRELATION_ID = CorrelationId.HEADER;   // set by CorrelationIdFilter
     static final String REPLAYED = "Idempotent-Replayed";
-
-    /** Accept a caller's correlation id only if it is short and safe to put in logs and headers. */
-    private static final Pattern SAFE_CORRELATION_ID = Pattern.compile("[A-Za-z0-9._-]{1,100}");
 
     private final CommunicationService service;
 
@@ -46,28 +48,38 @@ public class CommunicationController {
             produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_XML_VALUE})
     public ResponseEntity<AcceptedResponse> submit(
             @RequestHeader(IDEMPOTENCY_KEY) String idempotencyKey,
-            @RequestHeader(value = CORRELATION_ID, required = false) String correlationId,
             @Valid @RequestBody CommunicationRequest request) {
 
-        AcceptResult result = service.accept(idempotencyKey, resolveCorrelationId(correlationId),
+        AcceptResult result = service.accept(idempotencyKey, CorrelationId.current(),
                 request.templateId(), request.recipient(), request.stream(), request.variables());
 
         AcceptedResponse body = AcceptedResponse.from(result);
         return ResponseEntity.accepted()
                 .location(URI.create(body.statusUrl()))
-                .header(CORRELATION_ID, body.correlationId())
                 .header(REPLAYED, String.valueOf(result.replayed()))
                 .body(body);
+    }
+
+    /** One row of {@code GET /v1/communications}. History and merge values stay on the detail call. */
+    public record MessageSummary(UUID requestId, String status, String recipient, String templateId,
+                                 int templateVersion, String stream, String correlationId, int attemptCount,
+                                 Instant createdAt, Instant updatedAt) {
+        static MessageSummary of(MessageRecord m) {
+            return new MessageSummary(m.getId(), m.getStatus().name(), m.getRecipient(), m.getTemplateId(),
+                    m.getTemplateVersion(), m.getStream().name(), m.getCorrelationId(), m.getAttemptCount(),
+                    m.getCreatedAt(), m.getUpdatedAt());
+        }
+    }
+
+    /** Recent messages, newest first: {@code ?status=BOUNCED&limit=50} (limit 1 to 200). */
+    @GetMapping(produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_XML_VALUE})
+    public List<MessageSummary> recent(@RequestParam(required = false) MessageStatus status,
+                                       @RequestParam(defaultValue = "50") int limit) {
+        return service.recent(status, limit).stream().map(MessageSummary::of).toList();
     }
 
     @GetMapping(path = "/{requestId}", produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_XML_VALUE})
     public CommunicationStatusResponse status(@PathVariable UUID requestId) {
         return CommunicationStatusResponse.from(service.status(requestId));
-    }
-
-    static String resolveCorrelationId(String supplied) {
-        return supplied != null && SAFE_CORRELATION_ID.matcher(supplied).matches()
-                ? supplied
-                : UUID.randomUUID().toString();
     }
 }

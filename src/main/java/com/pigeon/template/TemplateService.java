@@ -1,5 +1,6 @@
 package com.pigeon.template;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Service;
@@ -44,6 +45,18 @@ public class TemplateService {
 
     public Set<String> fieldsNeeded(String templateId) {
         return renderer.fieldsNeeded(activeVersion(templateId).toContent());
+    }
+
+    /** Every template with the merge fields its active version needs, sorted by id. */
+    public List<TemplateSummary> list() {
+        return templates.findAll().stream()
+                .sorted(java.util.Comparator.comparing(Template::getId))
+                .map(t -> new TemplateSummary(t.getId(), t.getName(), t.getFromAddress(), t.getActiveVersion(),
+                        List.copyOf(fieldsNeeded(t.getId()))))
+                .toList();
+    }
+
+    public record TemplateSummary(String id, String name, String fromAddress, int activeVersion, List<String> fields) {
     }
 
     /** Renders the active version. */

@@ -197,12 +197,13 @@ public class SendService {
         });
 
         if (giveUp) {
-            log.error("Message {} FAILED after attempt {}: {}", command.messageId(), claim.attempt(), description);
+            log.error("Message {} FAILED after attempt {}: {}", command.messageId(), claim.attempt(),
+                    Pii.maskEmailsIn(description));
             return SendOutcome.failed(description);
         }
         Duration delay = props.backoffFor(claim.attempt());
         log.warn("Message {} attempt {} failed, retrying in {}s: {}", command.messageId(), claim.attempt(),
-                delay.toSeconds(), description);
+                delay.toSeconds(), Pii.maskEmailsIn(description));
         return SendOutcome.retry(description, delay);
     }
 

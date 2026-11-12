@@ -7,6 +7,8 @@ import com.pigeon.message.MessageRecordRepository;
 import com.pigeon.message.MessageStatus;
 import com.pigeon.message.OutboxEntry;
 import com.pigeon.message.OutboxRepository;
+import com.pigeon.support.CorrelationId;
+import com.pigeon.support.Pii;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -98,10 +100,13 @@ public class OutboxRelay {
         int published = 0;
         int failed = 0;
         for (OutboxEntry entry : batch) {
+            Object corr = entry.getPayload().get("correlationId");
+            CorrelationId.bind(corr == null ? null : corr.toString(), entry.getMessageId());
             try {
                 publish(entry);
                 entry.markPublished(now);
                 published++;
+                log.debug("Published message {} to {}", entry.getMessageId(), entry.getDestination());
             } catch (Exception e) {
                 if (e instanceof InterruptedException) {
                     Thread.currentThread().interrupt();
@@ -114,6 +119,8 @@ public class OutboxRelay {
                 }
                 // Stop this batch: if SQS is unreachable the rest would fail the same way.
                 break;
+            } finally {
+                CorrelationId.clear();
             }
         }
         return new BatchResult(published, failed);
@@ -139,7 +146,7 @@ public class OutboxRelay {
 
     private void giveUp(OutboxEntry entry, String error, Instant now) {
         log.error("Outbox row {} for message {} FAILED after {} attempts: {}",
-                entry.getId(), entry.getMessageId(), entry.getAttempts(), error);
+                entry.getId(), entry.getMessageId(), entry.getAttempts(), Pii.maskEmailsIn(error));
         messages.findForUpdate(entry.getMessageId()).ifPresent(message -> {
             if (message.getStatus() == MessageStatus.QUEUED) {
                 message.markFailed("Could not publish to " + entry.getDestination() + ": " + error, now);

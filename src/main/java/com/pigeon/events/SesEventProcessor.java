@@ -10,6 +10,7 @@ import com.pigeon.message.MessageRecordRepository;
 import com.pigeon.message.MessageStatus;
 import com.pigeon.suppression.SuppressionReason;
 import com.pigeon.suppression.SuppressionService;
+import com.pigeon.support.CorrelationId;
 import com.pigeon.support.Pii;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -125,6 +126,13 @@ public class SesEventProcessor {
         String sesMessageId = mail.path("messageId").asText(null);
         Optional<MessageRecord> found = findMessage(mail, sesMessageId);
 
+        // From here on every log line carries the original request's correlation id.
+        String taggedCorrelation = mail.path("tags").path("correlationId").path(0).asText(null);
+        found.ifPresentOrElse(
+                m -> CorrelationId.bind(m.getCorrelationId(), m.getId()),
+                () -> CorrelationId.bind(taggedCorrelation, null));
+        MessageStatus before = found.map(MessageRecord::getStatus).orElse(null);
+
         if (found.isPresent() && found.get().getStatus() == MessageStatus.QUEUED) {
             throw new EventNotReadyException(found.get().getId(), p.type());
         }
@@ -133,7 +141,7 @@ public class SesEventProcessor {
         }
 
         Instant at = eventTime(p.event(), p.type());
-        return switch (p.type()) {
+        Result result = switch (p.type()) {
             case "Delivery" -> delivery(p.event(), found, at);
             case "Bounce" -> bounce(p.event(), found, sesMessageId, at);
             case "Complaint" -> complaint(p.event(), found, sesMessageId, at);
@@ -145,6 +153,10 @@ public class SesEventProcessor {
                     Map.of("link", p.event().path("click").path("link").asText("")), at);
             default -> Result.IGNORED;   // Send, Subscription: nothing to record
         };
+        if (found.isPresent() && result == Result.APPLIED) {
+            log.info("SES {} event for message {}: {} -> {}", p.type(), found.get().getId(), before, found.get().getStatus());
+        }
+        return result;
     }
 
     private Optional<MessageRecord> findMessage(JsonNode mail, String sesMessageId) {

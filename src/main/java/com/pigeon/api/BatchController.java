@@ -5,6 +5,7 @@ import com.pigeon.message.CommunicationService;
 import com.pigeon.message.CommunicationService.AcceptResult;
 import com.pigeon.message.IdempotencyConflictException;
 import com.pigeon.message.MessageStream;
+import com.pigeon.support.CorrelationId;
 import com.pigeon.template.MissingMergeFieldsException;
 import com.pigeon.template.TemplateService;
 import jakarta.validation.ConstraintViolation;
@@ -91,7 +92,6 @@ public class BatchController {
             produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_XML_VALUE})
     public ResponseEntity<BatchResponse> submit(
             @RequestHeader(CommunicationController.IDEMPOTENCY_KEY) String batchKey,
-            @RequestHeader(value = CommunicationController.CORRELATION_ID, required = false) String correlationId,
             @Valid @RequestBody BatchRequest request) {
 
         if (batchKey.isBlank() || batchKey.length() > MAX_BATCH_KEY) {
@@ -100,7 +100,7 @@ public class BatchController {
         }
         templates.template(request.templateId());   // unknown template -> 400 for the whole batch
 
-        String corr = CommunicationController.resolveCorrelationId(correlationId);
+        String corr = CorrelationId.current();
         Map<String, String> shared = request.sharedVariables() == null ? Map.of() : request.sharedVariables();
         List<ItemResult> results = new ArrayList<>(request.recipients().size());
 
@@ -142,7 +142,7 @@ public class BatchController {
         log.info("Batch {} ({} items, template {}): {}", batchKey, results.size(), request.templateId(), counts);
 
         BatchResponse body = new BatchResponse(batchKey, corr, request.templateId(), results.size(), counts, results);
-        return ResponseEntity.accepted().header(CommunicationController.CORRELATION_ID, corr).body(body);
+        return ResponseEntity.accepted().body(body);
     }
 
     private static ErrorResponseException badRequest(String type, String title, String detail) {

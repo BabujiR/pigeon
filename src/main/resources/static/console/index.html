@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pigeon Console</title>
+<style>
+/* Layout: operator console. Header with live health, tab strip, one working view at a time.
+   Everything here calls the real Pigeon API on this server; nothing is simulated in the page. */
+:root{
+  --bg:#f3f5f8; --surface:#ffffff; --sunk:#e9edf3; --line:#d3dae4;
+  --ink:#141b26; --muted:#5a6678; --accent:#2848b8; --accent-ink:#ffffff; --accent-soft:#e1e8fb;
+  --ok:#1b7044; --ok-soft:#ddf2e6; --warn:#985600; --warn-soft:#fbecd3; --bad:#ad291d; --bad-soft:#fbe1dd;
+  --info:#2848b8; --info-soft:#e1e8fb;
+  --f-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --f-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f141c; --surface:#161d28; --sunk:#1c2532; --line:#2b3647;
+  --ink:#e2e7ef; --muted:#97a3b6; --accent:#8fa6ff; --accent-ink:#0f141c; --accent-soft:#1f2a4b;
+  --ok:#58c58d; --ok-soft:#14301f; --warn:#e8a84b; --warn-soft:#352611; --bad:#f0796c; --bad-soft:#3a1b18;
+  --info:#8fa6ff; --info-soft:#1f2a4b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141c; --surface:#161d28; --sunk:#1c2532; --line:#2b3647;
+  --ink:#e2e7ef; --muted:#97a3b6; --accent:#8fa6ff; --accent-ink:#0f141c; --accent-soft:#1f2a4b;
+  --ok:#58c58d; --ok-soft:#14301f; --warn:#e8a84b; --warn-soft:#352611; --bad:#f0796c; --bad-soft:#3a1b18;
+  --info:#8fa6ff; --info-soft:#1f2a4b; color-scheme:dark}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-ui)}
+[hidden]{display:none!important}
+.wrap{max-width:1200px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{background:var(--surface);border-bottom:1px solid var(--line)}
+header.top .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding-block:14px}
+.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.brand h1{margin:0;font-size:20px;letter-spacing:-.01em}
+.brand .tag{color:var(--muted);font-size:13px}
+.top .right{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
+a{color:var(--accent)}
+nav.tabs{display:flex;gap:2px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-top:16px}
+nav.tabs button{background:none;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;padding:9px 14px;font:600 14px var(--f-ui);color:var(--muted);cursor:pointer}
+nav.tabs button[aria-selected="true"]{color:var(--ink);border-color:var(--accent)}
+main{padding-block:18px 60px}
+.grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:16px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}}
+.stack{display:flex;flex-direction:column;gap:16px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px;min-width:0}
+h2{font-size:16px;margin:0 0 10px}
+h3{font-size:14px;margin:0 0 8px}
+.hint{color:var(--muted);font-size:13px}
+.fields{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.row>.field{flex:1 1 180px;min-width:0}
+label,.label{display:block;font-weight:600;font-size:13px;margin-bottom:3px}
+input[type=text],input[type=email],select,textarea{font-variant-ligatures:none;font-feature-settings:"calt" 0;width:100%;font:14px var(--f-ui);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:7px 9px}
+textarea{font-family:var(--f-mono);font-size:13px;min-height:160px;resize:vertical}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button.btn{font:600 14px var(--f-ui);border-radius:4px;padding:8px 14px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+button.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.btn.danger{color:var(--bad);border-color:var(--bad)}
+button.btn.small{padding:4px 9px;font-size:12px}
+button:disabled{opacity:.55;cursor:not-allowed}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:13px var(--f-ui);border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:999px;padding:4px 10px;cursor:pointer}
+.chip:hover{border-color:var(--accent)}
+.chip b{font-weight:600}
+.radio{display:flex;gap:14px;flex-wrap:wrap;font-size:14px}
+.radio label{font-weight:400;display:flex;gap:6px;align-items:center;margin:0}
+.pill{display:inline-block;font:600 11px var(--f-mono);letter-spacing:.03em;border-radius:999px;padding:2px 8px;white-space:nowrap;text-transform:uppercase}
+.s-ok{background:var(--ok-soft);color:var(--ok)} .s-warn{background:var(--warn-soft);color:var(--warn)}
+.s-bad{background:var(--bad-soft);color:var(--bad)} .s-info{background:var(--info-soft);color:var(--info)} .s-mute{background:var(--sunk);color:var(--muted)}
+.mono{font-variant-ligatures:none;font-family:var(--f-mono);font-size:12.5px;overflow-wrap:anywhere}
+pre{margin:0;background:var(--sunk);border:1px solid var(--line);border-radius:4px;padding:10px 12px;overflow:auto;max-height:320px;font:12.5px/1.5 var(--f-mono);white-space:pre}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+tbody tr.clickable{cursor:pointer} tbody tr.clickable:hover{background:var(--sunk)}
+td.num{font-variant-numeric:tabular-nums;text-align:right}
+/* tracker */
+ol.tracker{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+ol.tracker li{font:600 12px var(--f-mono);padding:4px 10px;border-radius:4px;background:var(--sunk);color:var(--muted)}
+ol.tracker li.done{background:var(--ok-soft);color:var(--ok)}
+ol.tracker li.bad{background:var(--bad-soft);color:var(--bad)}
+ol.tracker li.now{outline:2px solid var(--accent)}
+ol.tracker .sep{background:none;padding:0;color:var(--line)}
+ul.timeline{list-style:none;margin:0;padding:0}
+ul.timeline li{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;padding:7px 0;border-top:1px solid var(--line)}
+ul.timeline li:first-child{border-top:0}
+ul.timeline time{font:12px var(--f-mono);color:var(--muted)}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;font-size:13.5px}
+.kv dt{color:var(--muted)} .kv dd{margin:0;overflow-wrap:anywhere}
+/* reputation */
+.banner{border-radius:6px;padding:14px 16px;border:1px solid var(--line);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.banner.HEALTHY{background:var(--ok-soft);border-color:var(--ok)} .banner.UNDER_REVIEW{background:var(--warn-soft);border-color:var(--warn)} .banner.PAUSED{background:var(--bad-soft);border-color:var(--bad)}
+.banner .big{font-size:22px;font-weight:700}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));background:var(--surface);border-top:1px solid var(--line);border-left:1px solid var(--line);border-radius:6px;overflow:hidden}
+.tile{background:var(--surface);padding:10px 12px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.tile .k{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.tile .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.meter{margin:6px 0 18px}
+.meter .head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px}
+.track{position:relative;height:12px;border-radius:6px;background:var(--sunk);margin-top:6px}
+.fill{position:absolute;left:0;top:0;bottom:0;border-radius:6px;background:var(--ok);transition:width .3s}
+.mark{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--muted)}
+.mark span{position:absolute;top:18px;left:50%;transform:translateX(-50%);font:10px var(--f-mono);color:var(--muted);white-space:nowrap}
+.toast{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:6px;font-size:14px;max-width:min(420px,calc(100vw - 32px));box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:20}
+details.call{border-top:1px solid var(--line);padding:8px 0}
+details.call summary{cursor:pointer;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13.5px}
+details.call .body{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.inline-confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:13px;color:var(--bad)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <h1>Pigeon Console</h1>
+      <span class="tag">Trusted delivery, built on AWS SES · live API on this server</span>
+    </div>
+    <div class="right">
+      <span>API <span id="health" class="pill s-mute">checking</span></span>
+      <a href="/">Pigeon Lab (demo)</a>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="tabs" role="tablist" aria-label="Console sections">
+    <button role="tab" data-tab="send" aria-selected="true">Send</button>
+    <button role="tab" data-tab="messages" aria-selected="false">Messages</button>
+    <button role="tab" data-tab="batch" aria-selected="false">Batch</button>
+    <button role="tab" data-tab="reputation" aria-selected="false">Reputation</button>
+    <button role="tab" data-tab="suppressions" aria-selected="false">Suppressions</button>
+    <button role="tab" data-tab="activity" aria-selected="false">API activity <span id="callCount" class="pill s-mute">0</span></button>
+  </nav>
+
+  <main>
+    <!-- SEND -->
+    <section id="t-send" role="tabpanel">
+      <div class="grid">
+        <div class="stack">
+          <div class="panel">
+            <h2>Send one email</h2>
+            <p class="hint">Posts to <span class="mono">POST /v1/communications</span>, then follows the message until SES reports the outcome.</p>
+            <div class="fields">
+              <div class="field"><label for="s-template">Template</label><select id="s-template"></select></div>
+              <div class="field">
+                <label for="s-recipient">Recipient</label>
+                <input type="email" id="s-recipient" autocomplete="off">
+                <div class="chips" style="margin-top:6px" id="s-chips"></div>
+                <div class="hint" id="s-chip-hint"></div>
+              </div>
+              <div class="field">
+                <span class="label">Stream</span>
+                <div class="radio">
+                  <label><input type="radio" name="s-stream" value="TRANSACTIONAL" checked> Transactional</label>
+                  <label><input type="radio" name="s-stream" value="BULK"> Bulk</label>
+                </div>
+              </div>
+              <div id="s-vars" class="fields"></div>
+              <div class="row">
+                <div class="field"><label for="s-key">Idempotency-Key</label><input type="text" id="s-key"></div>
+                <button class="btn small" id="s-newkey" type="button">New key</button>
+              </div>
+              <label style="font-weight:400;display:flex;gap:6px;align-items:center"><input type="checkbox" id="s-keepkey"> Keep this key for the next send (shows idempotent replay)</label>
+              <div class="row"><button class="btn primary" id="s-send" type="button">Send</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="panel" id="s-result-panel">
+            <h2>Result</h2>
+            <div id="s-result"><p class="hint">Pick a recipient chip and press Send. The result and the live status appear here.</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MESSAGES -->
+    <section id="t-messages" role="tabpanel" hidden>
+      <div class="grid">
+        <div class="panel">
+          <div class="row" style="margin-bottom:10px">
+            <div class="field"><label for="m-status">Status</label>
+              <select id="m-status"><option value="">All</option><option>QUEUED</option><option>SENT</option><option>DELIVERED</option><option>BOUNCED</option><option>COMPLAINED</option><option>SUPPRESSED</option><option>FAILED</option></select></div>
+            <button class="btn small" id="m-refresh" type="button">Refresh</button>
+            <label style="font-weight:400;display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="m-auto" checked> Auto-refresh</label>
+          </div>
+          <div class="tablewrap"><table><thead><tr><th>Created</th><th>Status</th><th>Recipient</th><th>Template</th><th>Stream</th></tr></thead><tbody id="m-rows"></tbody></table></div>
+        </div>
+        <div class="panel" id="m-detail"><h2>Message</h2><p class="hint">Select a message to see its full history.</p></div>
+      </div>
+    </section>
+
+    <!-- BATCH -->
+    <section id="t-batch" role="tabpanel" hidden>
+      <div class="grid">
+        <div class="panel">
+          <h2>Send a batch</h2>
+          <p class="hint"><span class="mono">POST /v1/communications/batch</span> · up to 1,000 recipients. One line per recipient: <span class="mono">address, firstName</span>.</p>
+          <div class="fields">
+            <div class="row">
+              <div class="field"><label for="b-template">Template</label><select id="b-template"></select></div>
+              <div class="field"><label for="b-stream">Stream</label><select id="b-stream"><option>BULK</option><option>TRANSACTIONAL</option></select></div>
+            </div>
+            <div id="b-shared" class="fields"></div>
+            <div class="field"><label for="b-lines">Recipients</label><textarea id="b-lines" spellcheck="false"></textarea>
+              <div class="row" style="margin-top:6px"><button class="btn small" id="b-sample" type="button">Fill sample (7 good, 3 bounce, 1 invalid)</button></div></div>
+            <div class="row"><button class="btn primary" id="b-send" type="button">Send batch</button></div>
+          </div>
+        </div>
+        <div class="panel"><h2>Batch result</h2><div id="b-result"><p class="hint">Results per recipient appear here.</p></div></div>
+      </div>
+    </section>
+
+    <!-- REPUTATION -->
+    <section id="t-reputation" role="tabpanel" hidden>
+      <div class="stack">
+        <div class="row">
+          <div class="field" style="flex:0 1 200px"><label for="r-window">Window</label>
+            <select id="r-window"><option value="1h">Last hour</option><option value="24h" selected>Last 24 hours</option><option value="7d">Last 7 days</option></select></div>
+          <button class="btn small" id="r-refresh" type="button">Refresh</button>
+          <span class="hint">Refreshes every 10 seconds while open · <span class="mono">GET /v1/metrics</span></span>
+        </div>
+        <div id="r-banner" class="banner"><span class="hint">Loading…</span></div>
+        <div class="grid">
+          <div class="panel">
+            <h2>Rates vs SES thresholds</h2>
+            <div id="r-meters"></div>
+            <div class="tiles" id="r-tiles"></div>
+          </div>
+          <div class="stack">
+            <div class="panel"><h2>By stream</h2><div class="tablewrap"><table><thead><tr><th>Configuration set</th><th>Status</th><th class="num">Sent</th><th class="num">Hard bounce %</th><th class="num">Complaint %</th></tr></thead><tbody id="r-streams"></tbody></table></div></div>
+            <div class="panel"><h2>Pipeline</h2><div class="tiles" id="r-pipeline"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUPPRESSIONS -->
+    <section id="t-suppressions" role="tabpanel" hidden>
+      <div class="grid">
+        <div class="panel">
+          <h2>Suppress an address</h2>
+          <div class="fields">
+            <div class="field"><label for="p-address">Address</label><input type="email" id="p-address" placeholder="someone@example.com"></div>
+            <div class="field"><label for="p-detail">Note</label><input type="text" id="p-detail" placeholder="Customer asked by phone"></div>
+            <div class="row"><button class="btn primary" id="p-add" type="button">Add to suppression list</button></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="row" style="margin-bottom:10px">
+            <div class="field"><label for="p-reason">Reason</label>
+              <select id="p-reason"><option value="">All</option><option>HARD_BOUNCE</option><option>COMPLAINT</option><option>REPEATED_SOFT_BOUNCE</option><option>ACCOUNT_SUPPRESSION_LIST</option><option>MANUAL</option></select></div>
+            <button class="btn small" id="p-refresh" type="button">Refresh</button>
+            <span class="hint" id="p-total"></span>
+          </div>
+          <div class="tablewrap"><table><thead><tr><th>Address</th><th>Reason</th><th>Since</th><th></th></tr></thead><tbody id="p-rows"></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACTIVITY -->
+    <section id="t-activity" role="tabpanel" hidden>
+      <div class="panel">
+        <h2>API activity</h2>
+        <p class="hint">Every call this page made, newest first. Open one to see the exact request and response, and a PowerShell command that makes the same call.</p>
+        <div id="a-list"><p class="hint">No calls yet.</p></div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+  const $ = s => document.querySelector(s);
+  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const rand = () => Math.random().toString(36).slice(2, 8);
+  const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'}) : '';
+  const fmtDate = iso => iso ? new Date(iso).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'}) : '';
+  const STATUS_CLASS = {QUEUED: 's-info', ACCEPTED: 's-info', SENT: 's-info', DELIVERED: 's-ok', BOUNCED: 's-bad', COMPLAINED: 's-bad',
+    SUPPRESSED: 's-warn', FAILED: 's-bad', REJECTED: 's-bad', HEALTHY: 's-ok', UNDER_REVIEW: 's-warn', PAUSED: 's-bad',
+    HARD_BOUNCE: 's-bad', COMPLAINT: 's-bad', REPEATED_SOFT_BOUNCE: 's-warn', ACCOUNT_SUPPRESSION_LIST: 's-bad', MANUAL: 's-mute', UP: 's-ok', DOWN: 's-bad'};
+  const pill = s => `<span class="pill ${STATUS_CLASS[s] || 's-mute'}">${esc(s)}</span>`;
+  let toastTimer;
+  function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 4000); }
+
+  // ---------------------------------------------------------------- API client + activity log
+  const calls = [];
+  async function api(method, path, opts = {}) {
+    const correlationId = 'console-' + rand() + rand();
+    const headers = Object.assign({'Accept': 'application/json', 'X-Correlation-Id': correlationId}, opts.headers || {});
+    let bodyText;
+    if (opts.body !== undefined) { headers['Content-Type'] = 'application/json'; bodyText = JSON.stringify(opts.body); }
+    const started = performance.now();
+    const entry = {method, path, headers, bodyText, at: new Date(), status: 0, ms: 0, response: null, quiet: !!opts.quiet};
+    try {
+      const res = await fetch(path, {method, headers, body: bodyText});
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
+      Object.assign(entry, {status: res.status, ms: Math.round(performance.now() - started), response: data,
+        correlationId: res.headers.get('X-Correlation-Id') || correlationId});
+      record(entry);
+      return {status: res.status, ok: res.ok, data, headers: res.headers};
+    } catch (e) {
+      Object.assign(entry, {status: 0, ms: Math.round(performance.now() - started), response: String(e)});
+      record(entry);
+      throw e;
+    }
+  }
+  function record(entry) {
+    if (entry.quiet) return;                       // background polling stays out of the log
+    calls.unshift(entry);
+    if (calls.length > 100) calls.pop();
+    $('#callCount').textContent = calls.length;
+    if (!$('#t-activity').hidden) renderActivity();
+  }
+  function powershell(e) {
+    const uri = location.origin + e.path;
+    const hdrs = Object.entries(e.headers).filter(([k]) => k !== 'Content-Type' && k !== 'Accept')
+      .map(([k, v]) => `"${k}" = "${v}"`).join('; ');
+    let cmd = `Invoke-RestMethod -Method ${e.method[0] + e.method.slice(1).toLowerCase()} -Uri "${uri}"`;
+    if (hdrs) cmd += ` \`\n  -Headers @{ ${hdrs} }`;
+    if (e.bodyText !== undefined) cmd += ` \`\n  -ContentType "application/json" -Body '${e.bodyText.replace(/'/g, "''")}'`;
+    return cmd;
+  }
+  function renderActivity() {
+    if (!calls.length) { $('#a-list').innerHTML = '<p class="hint">No calls yet.</p>'; return; }
+    $('#a-list').innerHTML = calls.map((c, i) => `
+      <details class="call">
+        <summary><span class="pill ${c.status >= 200 && c.status < 300 ? 's-ok' : c.status >= 400 && c.status < 500 ? 's-warn' : 's-bad'}">${c.status || 'ERR'}</span>
+          <span class="mono">${esc(c.method)} ${esc(c.path)}</span><span class="hint">${c.ms} ms · ${esc(fmtTime(c.at))} · ${esc(c.correlationId || '')}</span></summary>
+        <div class="body">
+          <div><h3>Request headers</h3><pre>${esc(Object.entries(c.headers).map(([k, v]) => k + ': ' + v).join('\n'))}</pre></div>
+          ${c.bodyText !== undefined ? `<div><h3>Request body</h3><pre>${esc(JSON.stringify(JSON.parse(c.bodyText), null, 2))}</pre></div>` : ''}
+          <div><h3>Response</h3><pre>${esc(typeof c.response === 'string' ? c.response : JSON.stringify(c.response, null, 2))}</pre></div>
+          <div><h3>Same call from PowerShell</h3><pre id="ps-${i}">${esc(powershell(c))}</pre>
+            <button class="btn small" type="button" data-copy="ps-${i}">Copy</button></div>
+        </div>
+      </details>`).join('');
+  }
+  document.addEventListener('click', ev => {
+    const id = ev.target.getAttribute && ev.target.getAttribute('data-copy');
+    if (!id) return;
+    const text = document.getElementById(id).textContent;
+    navigator.clipboard.writeText(text).then(() => toast('Copied'), () => {
+      const r = document.createRange(); r.selectNodeContents(document.getElementById(id));
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); toast('Selected: press Ctrl+C');
+    });
+  });
+
+  // ---------------------------------------------------------------- tabs
+  const tabs = ['send', 'messages', 'batch', 'reputation', 'suppressions', 'activity'];
+  function showTab(name) {
+    if (!tabs.includes(name)) name = 'send';
+    tabs.forEach(t => {
+      $('#t-' + t).hidden = t !== name;
+      document.querySelector(`[data-tab="${t}"]`).setAttribute('aria-selected', String(t === name));
+    });
+    if (name === 'messages') loadMessages();
+    if (name === 'reputation') loadMetrics();
+    if (name === 'suppressions') loadSuppressions();
+    if (name === 'activity') renderActivity();
+  }
+  document.querySelectorAll('nav.tabs button').forEach(b => b.addEventListener('click', () => { location.hash = b.dataset.tab; }));
+  window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
+
+  // ---------------------------------------------------------------- health
+  async function loadHealth() {
+    try {
+      const r = await api('GET', '/actuator/health', {quiet: true});
+      const s = r.data && r.data.status ? r.data.status : (r.ok ? 'UP' : 'DOWN');
+      $('#health').outerHTML = `<span id="health" class="pill ${STATUS_CLASS[s] || 's-warn'}">${esc(s)}</span>`;
+    } catch (e) {
+      $('#health').outerHTML = '<span id="health" class="pill s-bad">unreachable</span>';
+    }
+  }
+
+  // ---------------------------------------------------------------- templates
+  const SAMPLE = {firstName: 'Dana', amount: '$412.60', paidOn: 'November 6, 2026', last4: '4417', planName: 'Gold PPO 2027',
+    effectiveDate: 'January 1, 2027', memberId: 'AB-448210', resetLink: 'https://member.example.com/reset/7f3c9a', expiresMinutes: '30'};
+  let templates = [];
+  async function loadTemplates() {
+    const r = await api('GET', '/v1/templates');
+    templates = Array.isArray(r.data) ? r.data : [];
+    const opts = templates.map(t => `<option value="${esc(t.id)}">${esc(t.name)} (${esc(t.id)} v${t.activeVersion})</option>`).join('');
+    $('#s-template').innerHTML = opts;
+    $('#b-template').innerHTML = opts;
+    const receipt = templates.find(t => t.id === 'payment-receipt');
+    if (receipt) { $('#s-template').value = receipt.id; $('#b-template').value = receipt.id; }
+    renderVarInputs();
+    renderSharedInputs();
+  }
+  const tmpl = id => templates.find(t => t.id === id) || {fields: []};
+  function renderVarInputs() {
+    const t = tmpl($('#s-template').value);
+    $('#s-vars').innerHTML = `<div class="label">Merge fields</div>` + t.fields.map(f =>
+      `<div class="row"><div class="field"><label for="v-${esc(f)}" style="font-weight:400" class="mono">${esc(f)}</label>
+        <input type="text" id="v-${esc(f)}" data-var="${esc(f)}" value="${esc(SAMPLE[f] || '')}"></div></div>`).join('') +
+      `<div class="hint">Clear a field and send to see the 400 that lists every missing field.</div>`;
+  }
+  function renderSharedInputs() {
+    const t = tmpl($('#b-template').value);
+    const shared = t.fields.filter(f => f !== 'firstName');
+    $('#b-shared').innerHTML = shared.length ? `<div class="label">Shared merge fields (same for every recipient)</div>` + shared.map(f =>
+      `<div class="row"><div class="field"><label for="bv-${esc(f)}" style="font-weight:400" class="mono">${esc(f)}</label>
+        <input type="text" id="bv-${esc(f)}" data-shared="${esc(f)}" value="${esc(SAMPLE[f] || '')}"></div></div>`).join('') : '';
+  }
+  $('#s-template').addEventListener('change', renderVarInputs);
+  $('#b-template').addEventListener('change', renderSharedInputs);
+
+  // ---------------------------------------------------------------- send
+  const SCENARIOS = [
+    {label: 'Delivered', make: () => `success+${rand()}@simulator.amazonses.com`, hint: 'SES accepts and the mailbox delivers: ends DELIVERED.'},
+    {label: 'Hard bounce', make: () => `bounce+${rand()}@simulator.amazonses.com`, hint: '550 5.1.1 user unknown: BOUNCED, address suppressed. Send again to see SUPPRESSED.'},
+    {label: 'Complaint', make: () => `complaint+${rand()}@simulator.amazonses.com`, hint: 'Delivered, then marked as spam: COMPLAINED, address suppressed.'},
+    {label: 'SES suppression list', make: () => `suppressionlist+${rand()}@simulator.amazonses.com`, hint: 'SES refuses the address at account level: BOUNCED, ACCOUNT_SUPPRESSION_LIST.'},
+    {label: 'Mailbox full', make: () => `dana.mailboxfull+${rand()}@example.com`, hint: 'Soft bounce. Reuse the same address 3 times to trigger REPEATED_SOFT_BOUNCE.'}
+  ];
+  $('#s-chips').innerHTML = SCENARIOS.map((s, i) => `<button type="button" class="chip" data-scn="${i}"><b>${esc(s.label)}</b></button>`).join('');
+  $('#s-chips').addEventListener('click', ev => {
+    const b = ev.target.closest('[data-scn]'); if (!b) return;
+    const s = SCENARIOS[+b.dataset.scn];
+    $('#s-recipient').value = s.make();
+    $('#s-chip-hint').textContent = s.hint;
+  });
+  const newKey = () => { $('#s-key').value = 'console-' + new Date().toISOString().slice(0, 10) + '-' + rand(); };
+  $('#s-newkey').addEventListener('click', newKey);
+
+  let tracking = 0;
+  $('#s-send').addEventListener('click', async () => {
+    const recipient = $('#s-recipient').value.trim();
+    if (!recipient) { toast('Enter a recipient or pick a scenario chip'); return; }
+    const variables = {};
+    document.querySelectorAll('[data-var]').forEach(i => { if (i.value.trim() !== '') variables[i.dataset.var] = i.value; });
+    const body = {templateId: $('#s-template').value, recipient,
+      stream: document.querySelector('input[name="s-stream"]:checked').value, variables};
+    const btn = $('#s-send'); btn.disabled = true;
+    try {
+      const r = await api('POST', '/v1/communications', {body, headers: {'Idempotency-Key': $('#s-key').value}});
+      const replay = r.headers.get('Idempotent-Replayed') === 'true';
+      $('#s-result').innerHTML = `
+        <div class="row" style="margin-bottom:8px">${pill(String(r.status))}
+          ${r.ok ? pill(r.data.status) : ''}${replay ? '<span class="pill s-info">idempotent replay</span>' : ''}
+          <span class="hint mono">${esc(r.headers.get('X-Correlation-Id') || '')}</span></div>
+        ${r.ok ? `<div id="s-track"><p class="hint">Following message ${esc(r.data.requestId)}…</p></div>` : ''}
+        <h3 style="margin-top:12px">Response</h3><pre>${esc(JSON.stringify(r.data, null, 2))}</pre>`;
+      if (r.ok) follow(r.data.requestId, '#s-track');
+      if (!$('#s-keepkey').checked) newKey();
+    } catch (e) {
+      $('#s-result').innerHTML = `<p class="hint">Could not reach the API: ${esc(e.message)}</p>`;
+    } finally { btn.disabled = false; }
+  });
+
+  // ---------------------------------------------------------------- message detail + live follow
+  const FINAL = ['DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED'];
+  function trackerHtml(m) {
+    const seen = new Set(m.events.map(e => e.type));
+    const outcome = ['DELIVERED', 'BOUNCED', 'COMPLAINED', 'SUPPRESSED', 'FAILED'].includes(m.status) ? m.status : null;
+    const steps = [['ACCEPTED', seen.has('ACCEPTED')], ['QUEUED', seen.has('QUEUED')], ['SENT', seen.has('SENT')]];
+    if (m.status === 'SUPPRESSED') steps.splice(1, 2);
+    const parts = steps.map(([s, done]) => `<li class="${done ? 'done' : ''}${!outcome && s === m.status ? ' now' : ''}">${s}</li>`);
+    parts.push(`<li class="${outcome === 'DELIVERED' ? 'done' : outcome ? 'bad' : ''}${outcome ? ' now' : ''}">${esc(outcome || 'OUTCOME')}</li>`);
+    return `<ol class="tracker">${parts.join('<li class="sep" aria-hidden="true">→</li>')}</ol>`;
+  }
+  function detailHtml(m) {
+    const events = m.events.slice().map(e => `<li><time>${esc(fmtTime(e.occurredAt))}</time>
+      <div>${pill(e.type)} ${e.detail && Object.keys(e.detail).length ? `<div class="mono hint" style="margin-top:4px">${esc(Object.entries(e.detail).map(([k, v]) => k + '=' + v).join('  '))}</div>` : ''}</div></li>`).join('');
+    return `${trackerHtml(m)}
+      <dl class="kv">
+        <dt>Request id</dt><dd class="mono">${esc(m.requestId)}</dd>
+        <dt>Status</dt><dd>${pill(m.status)}</dd>
+        <dt>Recipient</dt><dd>${esc(m.recipient)}</dd>
+        <dt>Template</dt><dd>${esc(m.templateId)} v${esc(m.templateVersion)}</dd>
+        <dt>Stream</dt><dd>${esc(m.stream)} · ${esc(m.configurationSet || '')}</dd>
+        ${m.sesMessageId ? `<dt>SES id</dt><dd class="mono">${esc(m.sesMessageId)}</dd>` : ''}
+        <dt>Correlation</dt><dd class="mono">${esc(m.correlationId)}</dd>
+        <dt>Attempts</dt><dd>${esc(m.attemptCount)}</dd>
+        ${m.lastError ? `<dt>Last error</dt><dd>${esc(m.lastError)}</dd>` : ''}
+      </dl>
+      <h3 style="margin-top:14px">History</h3><ul class="timeline">${events}</ul>`;
+  }
+  async function follow(id, target) {
+    const my = ++tracking;
+    const until = Date.now() + 45000;
+    let finalSince = 0;
+    while (my === tracking && Date.now() < until) {
+      const r = await api('GET', '/v1/communications/' + id, {quiet: true});
+      if (!document.querySelector(target)) return;
+      if (r.ok) {
+        document.querySelector(target).innerHTML = detailHtml(r.data);
+        if (FINAL.includes(r.data.status)) {
+          if (!finalSince) finalSince = Date.now();
+          if (Date.now() - finalSince > 3000) return;   // keep watching briefly: a complaint can follow delivery
+        }
+      }
+      await new Promise(res => setTimeout(res, 800));
+    }
+  }
+
+  // ---------------------------------------------------------------- messages tab
+  let messagesTimer;
+  async function loadMessages() {
+    const status = $('#m-status').value;
+    const r = await api('GET', '/v1/communications?limit=50' + (status ? '&status=' + status : ''), {quiet: true});
+    const rows = Array.isArray(r.data) ? r.data : [];
+    $('#m-rows').innerHTML = rows.length ? rows.map(m => `<tr class="clickable" data-id="${esc(m.requestId)}" tabindex="0">
+      <td>${esc(fmtDate(m.createdAt))}</td><td>${pill(m.status)}</td><td class="mono">${esc(m.recipient)}</td>
+      <td>${esc(m.templateId)}</td><td>${esc(m.stream)}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="hint">No messages yet. Send one from the Send tab.</td></tr>';
+    clearTimeout(messagesTimer);
+    if ($('#m-auto').checked && !$('#t-messages').hidden) messagesTimer = setTimeout(loadMessages, 5000);
+  }
+  async function openMessage(id) {
+    $('#m-detail').innerHTML = `<h2>Message</h2><div id="m-detail-body"><p class="hint">Loading…</p></div>`;
+    const r = await api('GET', '/v1/communications/' + id);
+    if (r.ok) { $('#m-detail-body').innerHTML = detailHtml(r.data); follow(id, '#m-detail-body'); }
+    else $('#m-detail-body').innerHTML = `<pre>${esc(JSON.stringify(r.data, null, 2))}</pre>`;
+  }
+  $('#m-rows').addEventListener('click', ev => { const tr = ev.target.closest('tr[data-id]'); if (tr) openMessage(tr.dataset.id); });
+  $('#m-rows').addEventListener('keydown', ev => { const tr = ev.target.closest('tr[data-id]'); if (tr && ev.key === 'Enter') openMessage(tr.dataset.id); });
+  $('#m-status').addEventListener('change', loadMessages);
+  $('#m-refresh').addEventListener('click', loadMessages);
+  $('#m-auto').addEventListener('change', loadMessages);
+
+  // ---------------------------------------------------------------- batch tab
+  $('#b-sample').addEventListener('click', () => {
+    const t = rand(); const lines = [];
+    ['Ana', 'Ben', 'Cy', 'Dee', 'Eli', 'Fay', 'Gus'].forEach((n, i) => lines.push(`success+${t}-${i}@simulator.amazonses.com, ${n}`));
+    ['Hal', 'Ivy', 'Jo'].forEach((n, i) => lines.push(`bounce+${t}-${i}@simulator.amazonses.com, ${n}`));
+    lines.push('not-an-email, Kit');
+    $('#b-lines').value = lines.join('\n');
+  });
+  $('#b-send').addEventListener('click', async () => {
+    const recipients = $('#b-lines').value.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
+      const [address, firstName] = l.split(',').map(x => (x || '').trim());
+      return firstName ? {recipient: address, variables: {firstName}} : {recipient: address};
+    });
+    if (!recipients.length) { toast('Add at least one recipient line, or use Fill sample'); return; }
+    const sharedVariables = {};
+    document.querySelectorAll('[data-shared]').forEach(i => { if (i.value.trim()) sharedVariables[i.dataset.shared] = i.value; });
+    const body = {templateId: $('#b-template').value, stream: $('#b-stream').value, sharedVariables, recipients};
+    const btn = $('#b-send'); btn.disabled = true;
+    try {
+      const r = await api('POST', '/v1/communications/batch', {body, headers: {'Idempotency-Key': 'console-batch-' + rand() + rand()}});
+      if (!r.ok) { $('#b-result').innerHTML = `${pill(String(r.status))}<pre style="margin-top:8px">${esc(JSON.stringify(r.data, null, 2))}</pre>`; return; }
+      const counts = Object.entries(r.data.counts).map(([k, v]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`).join('');
+      $('#b-result').innerHTML = `<div class="tiles" style="margin-bottom:12px"><div class="tile"><div class="k">Total</div><div class="v">${r.data.total}</div></div>${counts}</div>
+        <div class="tablewrap"><table><thead><tr><th>#</th><th>Recipient</th><th>Status</th><th>Detail</th></tr></thead><tbody>
+        ${r.data.items.map(it => `<tr ${it.requestId ? `class="clickable" data-id="${esc(it.requestId)}"` : ''}><td>${it.index}</td><td class="mono">${esc(it.recipient || '')}</td>
+          <td>${pill(it.status)}</td><td class="hint">${esc(it.error || it.suppressionReason || '')}</td></tr>`).join('')}
+        </tbody></table></div><p class="hint">Watch them move to DELIVERED or BOUNCED on the Messages tab, and the bounce rate on Reputation.</p>`;
+    } finally { btn.disabled = false; }
+  });
+  $('#b-result').addEventListener('click', ev => {
+    const tr = ev.target.closest('tr[data-id]'); if (!tr) return;
+    location.hash = 'messages'; setTimeout(() => openMessage(tr.dataset.id), 50);
+  });
+
+  // ---------------------------------------------------------------- reputation tab
+  let metricsTimer;
+  function meter(label, value, t) {
+    const max = t.pause * 1.3;
+    const pct = v => Math.min(100, v / max * 100);
+    const color = value >= t.pause ? 'var(--bad)' : value >= t.review ? 'var(--warn)' : value >= t.warning ? 'var(--warn)' : 'var(--ok)';
+    return `<div class="meter"><div class="head"><span><b>${esc(label)}</b> ${value.toFixed(3).replace(/\.?0+$/, '')}%</span>
+      <span class="hint">warning ${t.warning}% · review ${t.review}% · pause ${t.pause}%</span></div>
+      <div class="track" aria-hidden="true"><div class="fill" style="width:${pct(value)}%;background:${color}"></div>
+      <div class="mark" style="left:${pct(t.warning)}%"><span>${t.warning}</span></div>
+      <div class="mark" style="left:${pct(t.review)}%"><span>${t.review}</span></div>
+      <div class="mark" style="left:${pct(t.pause)}%"><span>${t.pause}</span></div></div></div>`;
+  }
+  const tile = (k, v) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`;
+  async function loadMetrics() {
+    clearTimeout(metricsTimer);
+    const r = await api('GET', '/v1/metrics?window=' + $('#r-window').value, {quiet: true});
+    if (r.ok) {
+      const m = r.data, th = m.thresholds, tot = m.totals;
+      $('#r-banner').className = 'banner ' + m.status;
+      $('#r-banner').innerHTML = `<span class="big">${esc(m.status.replace('_', ' '))}</span>
+        ${m.earlyWarning ? '<span class="pill s-warn">early warning</span>' : ''}${!m.representative ? '<span class="pill s-mute">low volume</span>' : ''}
+        <span>${(m.reasons || []).map(esc).join('<br>') || 'Hard bounce and complaint rates are below the SES review levels.'}</span>`;
+      $('#r-meters').innerHTML = meter('Hard bounce rate', tot.bounceRatePercent, {warning: th.bounceWarning, review: th.bounceReview, pause: th.bouncePause})
+        + meter('Complaint rate', tot.complaintRatePercent, {warning: th.complaintWarning, review: th.complaintReview, pause: th.complaintPause});
+      $('#r-tiles').innerHTML = tile('Sent', tot.sent) + tile('Delivered', tot.delivered) + tile('Hard bounced', tot.hardBounced)
+        + tile('Soft bounced', tot.softBounced) + tile('Complained', tot.complained);
+      $('#r-streams').innerHTML = m.streams.length ? m.streams.map(s => `<tr><td class="mono">${esc(s.configurationSet)}</td><td>${pill(s.status)}</td>
+        <td class="num">${s.rates.sent}</td><td class="num">${s.rates.bounceRatePercent}</td><td class="num">${s.rates.complaintRatePercent}</td></tr>`).join('')
+        : '<tr><td colspan="5" class="hint">Nothing sent in this window.</td></tr>';
+      const p = m.pipeline;
+      $('#r-pipeline').innerHTML = tile('Accepted', p.acceptedInWindow) + tile('Suppressed', p.suppressedInWindow) + tile('Failed', p.failedInWindow)
+        + tile('Queued now', p.queuedNow) + tile('Outbox pending', p.outboxPending) + tile('Suppression list', p.suppressionListSize);
+    }
+    if (!$('#t-reputation').hidden) metricsTimer = setTimeout(loadMetrics, 10000);
+  }
+  $('#r-window').addEventListener('change', loadMetrics);
+  $('#r-refresh').addEventListener('click', loadMetrics);
+
+  // ---------------------------------------------------------------- suppressions tab
+  async function loadSuppressions() {
+    const reason = $('#p-reason').value;
+    const r = await api('GET', '/v1/suppressions?size=100' + (reason ? '&reason=' + reason : ''));
+    const items = r.ok ? r.data.items : [];
+    $('#p-total').textContent = r.ok ? `${r.data.totalItems} total` : '';
+    $('#p-rows').innerHTML = items.length ? items.map(s => `<tr data-address="${esc(s.address)}">
+      <td class="mono">${esc(s.address)}${s.detail ? `<div class="hint">${esc(s.detail)}</div>` : ''}</td><td>${pill(s.reason)}</td>
+      <td>${esc(fmtDate(s.createdAt))}</td><td><button class="btn small danger" type="button" data-remove>Remove</button><div class="slot"></div></td></tr>`).join('')
+      : '<tr><td colspan="4" class="hint">The suppression list is empty.</td></tr>';
+  }
+  async function removeSuppression(row, force) {
+    const address = row.dataset.address;
+    const r = await api('DELETE', '/v1/suppressions/' + encodeURIComponent(address) + (force ? '?force=true' : ''));
+    if (r.status === 204) { toast('Removed ' + address); loadSuppressions(); return; }
+    if (r.status === 409) {
+      row.querySelector('.slot').innerHTML = `<div class="inline-confirm">${esc(r.data.detail)}
+        <button class="btn small danger" type="button" data-force>Remove anyway</button></div>`;
+      return;
+    }
+    toast('Remove failed: ' + r.status);
+  }
+  $('#p-rows').addEventListener('click', ev => {
+    const row = ev.target.closest('tr[data-address]'); if (!row) return;
+    if (ev.target.hasAttribute('data-remove')) removeSuppression(row, false);
+    if (ev.target.hasAttribute('data-force')) removeSuppression(row, true);
+  });
+  $('#p-reason').addEventListener('change', loadSuppressions);
+  $('#p-refresh').addEventListener('click', loadSuppressions);
+  $('#p-add').addEventListener('click', async () => {
+    const address = $('#p-address').value.trim();
+    if (!address) { toast('Enter an address'); return; }
+    const r = await api('POST', '/v1/suppressions', {body: {address, detail: $('#p-detail').value || null}});
+    if (r.status === 201) toast('Suppressed ' + r.data.address);
+    else if (r.status === 200) toast('Already suppressed (' + r.data.reason + ')');
+    else toast((r.data && r.data.detail) || ('Failed: ' + r.status));
+    loadSuppressions();
+  });
+
+  // ---------------------------------------------------------------- start
+  (async function start() {
+    newKey();
+    const first = SCENARIOS[0]; $('#s-recipient').value = first.make(); $('#s-chip-hint').textContent = first.hint;
+    await loadHealth();
+    setInterval(loadHealth, 15000);
+    try { await loadTemplates(); } catch (e) { toast('Could not load templates: is Pigeon running?'); }
+    showTab(location.hash.slice(1));
+  })();
+})();
+</script>
+</body>
+</html>
