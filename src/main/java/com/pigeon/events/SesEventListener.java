@@ -1,5 +1,6 @@
 package com.pigeon.events;
 
+import com.pigeon.support.CorrelationId;
 import io.awspring.cloud.sqs.annotation.SqsListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,7 +26,11 @@ public class SesEventListener {
 
     @SqsListener("${pigeon.aws.queues.events}")
     public void onEvent(String body) {
-        SesEventProcessor.Result result = processor.process(body);
-        log.debug("SES event processed: {}", result);
+        try {
+            SesEventProcessor.Result result = processor.process(body);
+            log.debug("SES event processed: {}", result);
+        } finally {
+            CorrelationId.clear();
+        }
     }
 }

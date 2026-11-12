@@ -3,6 +3,8 @@
 spring:
   application:
     name: pigeon
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   datasource:
     url: ${PIGEON_DB_URL}
     username: ${PIGEON_DB_USERNAME}
@@ -72,6 +74,10 @@ pigeon:
 
 server:
   port: 8080
+  shutdown: graceful            # finish in-flight requests and SQS messages before stopping
+  error:
+    include-stacktrace: never   # never leak internals in error responses
+    include-message: never
 
 management:
   endpoints:
@@ -89,3 +95,12 @@ info:
   app:
     name: Pigeon
     tagline: Trusted delivery, built on AWS SES.
+
+# Plain, human-readable log lines. Every line carries the correlation id and message id, so
+# searching for one id shows a request's whole journey: API -> relay -> sender -> SES events.
+# For JSON (ECS) logs, as a log platform wants them, add the "json" profile.
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [%15.15t] [%X{correlationId:-}] [%X{messageId:-}] %-40.40logger{39} : %m%n%wEx"
+  level:
+    com.pigeon: INFO

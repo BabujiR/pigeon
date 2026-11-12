@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pigeon.config.PigeonAwsProperties;
 import com.pigeon.sender.EmailSentEvent;
+import com.pigeon.support.CorrelationId;
 import jakarta.annotation.PreDestroy;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -191,12 +192,21 @@ public class LocalEventSimulator {
 
     // --- Publishing -------------------------------------------------------------------------
 
+    @SuppressWarnings("unchecked")
     private void publish(Map<String, Object> event) {
+        Map<String, Object> tags = (Map<String, Object>) ((Map<String, Object>) event.get("mail")).get("tags");
+        Object corr = tags.get("correlationId");
+        Object id = tags.get("messageRecordId");
+        CorrelationId.bind(corr instanceof List<?> l && !l.isEmpty() ? l.get(0).toString() : null,
+                id instanceof List<?> l2 && !l2.isEmpty() ? l2.get(0) : null);
         try {
             String message = json.writeValueAsString(event);
             sns.publish(b -> b.topicArn(topicArn()).message(message));
+            log.debug("Simulated {} event published", event.get("eventType"));
         } catch (JsonProcessingException | RuntimeException e) {
             log.warn("Simulator could not publish {} event: {}", event.get("eventType"), e.getMessage());
+        } finally {
+            CorrelationId.clear();
         }
     }
 

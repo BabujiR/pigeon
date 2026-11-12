@@ -5,6 +5,7 @@ import com.pigeon.message.InvalidIdempotencyKeyException;
 import com.pigeon.message.MessageNotFoundException;
 import com.pigeon.template.MissingMergeFieldsException;
 import com.pigeon.template.TemplateNotFoundException;
+import com.pigeon.support.CorrelationId;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +14,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -27,11 +30,16 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  * <p>Review note: the caller should be able to fix a 400 from the response alone, without
  * reading our logs. Framework errors (missing header, malformed JSON, bad UUID) are handled by
  * the {@link ResponseEntityExceptionHandler} base class in the same format.
+ *
+ * <p>Every problem carries {@code correlationId}, so a caller reporting an error gives support the
+ * one value that finds every related log line. Unexpected errors become a plain 500 with no stack
+ * trace or internal detail in the response; the full exception is logged.
  */
 @RestControllerAdvice
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final String TYPE_BASE = "https://pigeon.local/problems/";
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     @ExceptionHandler(MissingMergeFieldsException.class)
     ProblemDetail missingFields(MissingMergeFieldsException e) {
@@ -65,6 +73,24 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, "communication-not-found", "Communication not found", e.getMessage());
     }
 
+    /** Anything we did not anticipate: log it in full, tell the caller only what is safe. */
+    @ExceptionHandler(Exception.class)
+    ProblemDetail unexpected(Exception e) {
+        log.error("Unexpected error handling request", e);
+        return problem(HttpStatus.INTERNAL_SERVER_ERROR, "internal-error", "Internal error",
+                "Something went wrong on our side. Quote the correlationId when reporting it.");
+    }
+
+    /** Framework-handled errors (and ErrorResponseException) pass through here: add the correlation id. */
+    @Override
+    protected ResponseEntity<Object> handleExceptionInternal(Exception ex, Object body, HttpHeaders headers,
+                                                             HttpStatusCode statusCode, WebRequest request) {
+        if (body instanceof ProblemDetail pd) {
+            pd.setProperty("correlationId", CorrelationId.current());
+        }
+        return super.handleExceptionInternal(ex, body, headers, statusCode, request);
+    }
+
     /** Bean Validation failures on the request body: list every field error, not just the first. */
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex,
@@ -87,6 +113,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(status, detail);
         pd.setType(URI.create(TYPE_BASE + type));
         pd.setTitle(title);
+        pd.setProperty("correlationId", CorrelationId.current());
         return pd;
     }
 }

@@ -14,7 +14,7 @@ reputation monitoring, and SPF / DKIM / DMARC domain authentication.
 | 3 | Outbox relay, sender worker calling SES, rate limiting, retries, DLQ | Done |
 | 4 | Event pipeline, suppression rules, local event simulator | Done |
 | 5 | Reputation metrics, suppression API, batch sending | Done |
-| 6 | Structured logging, PII masking, error handling | Planned |
+| 6 | Structured logging, correlation ids, PII masking, error handling | Done |
 | 7 | Docs, demo scripts, full run-through | Planned |
 
 ## Pigeon Lab (interactive)
@@ -364,6 +364,32 @@ retrying with the same `Idempotency-Key` queues nothing twice.
     { "recipient": "bounce+1@simulator.amazonses.com",  "variables": { "firstName": "Ben" } } ] }
 ```
 Response: `202` with `counts` (`QUEUED`, `SUPPRESSED`, `REJECTED`) and a result per item.
+
+## Logs and tracing (Phase 6)
+
+**One id follows each email everywhere.** Send `X-Correlation-Id` (or let Pigeon create one); it is
+returned in the response header, stored on the message, carried on the SQS message and SES tags, and
+printed on every log line from the API, the outbox relay, the sender and the SES event processor:
+
+```
+2026-11-11T22:58:01.114-05:00  INFO [nio-8080-exec-3] [order-4471] []                c.p.message.CommunicationService : Accepted message 3f1c... for d***@example.com: QUEUED (payment-receipt v1, TRANSACTIONAL)
+2026-11-11T22:58:01.632-05:00  INFO [ntainer#0-1-T-1] [order-4471] [3f1c...]          c.pigeon.sender.SendService       : Sent message 3f1c... to d***@example.com via sesv1 (attempt 1, SES id ...)
+2026-11-11T22:58:02.215-05:00  INFO [ntainer#1-1-T-1] [order-4471] [3f1c...]          c.p.events.SesEventProcessor      : SES Delivery event for message 3f1c...: SENT -> DELIVERED
+```
+
+```powershell
+# Follow one request through the logs
+mvn spring-boot:run "-Dspring-boot.run.profiles=local" | Select-String "order-4471"
+```
+
+- **JSON logs for a log platform:** add the `json` profile (`local,json` locally,
+  `SPRING_PROFILES_ACTIVE=json` in production). Lines become Elastic Common Schema JSON, with
+  `correlationId` and `messageId` as fields you can filter on.
+- **No personal data in logs:** addresses are masked (`d***@example.com`), including addresses
+  inside SES error text. Merge values never reach a log or a queue.
+- **Errors you can report:** every error response includes `correlationId`; unexpected errors are a
+  plain 500 with no stack trace or internal detail, while the full exception is logged.
+- **Graceful shutdown:** in-flight requests and SQS messages finish (up to 30s) before the app stops.
 
 ## Tests
 ```powershell

@@ -1,0 +1,8 @@
+# Structured JSON logs (Elastic Common Schema), one object per line, for CloudWatch Logs,
+# OpenSearch, Datadog or Splunk. Activate with SPRING_PROFILES_ACTIVE=json (in production) or
+# "local,json" (to see it locally). The correlationId and messageId log-context fields become
+# top-level JSON fields, so dashboards can filter on them directly.
+logging:
+  structured:
+    format:
+      console: ecs
