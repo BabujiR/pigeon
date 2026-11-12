@@ -26,9 +26,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import software.amazon.awssdk.services.sesv2.SesV2Client;
 import software.amazon.awssdk.services.sesv2.model.SendEmailRequest;
-import software.amazon.awssdk.services.sesv2.model.SendEmailResponse;
 
 /**
  * Sends one queued message through SES.
@@ -57,7 +55,7 @@ public class SendService {
     private final SuppressionService suppression;
     private final TemplateService templates;
     private final SesEmailFactory emailFactory;
-    private final SesV2Client ses;
+    private final EmailGateway gateway;
     private final SenderProperties props;
     private final RateLimiter rateLimiter;
     private final TransactionTemplate tx;
@@ -68,7 +66,7 @@ public class SendService {
                        SuppressionService suppression,
                        TemplateService templates,
                        SesEmailFactory emailFactory,
-                       SesV2Client ses,
+                       EmailGateway gateway,
                        SenderProperties props,
                        RateLimiterRegistry rateLimiters,
                        PlatformTransactionManager transactionManager) {
@@ -77,7 +75,7 @@ public class SendService {
         this.suppression = suppression;
         this.templates = templates;
         this.emailFactory = emailFactory;
-        this.ses = ses;
+        this.gateway = gateway;
         this.props = props;
         this.rateLimiter = rateLimiters.rateLimiter("ses", RateLimiterConfig.custom()
                 .limitForPeriod(props.ratePerSecond())
@@ -93,10 +91,10 @@ public class SendService {
             return claim.outcome();
         }
 
-        SendEmailResponse response;
+        String sesMessageId;
         try {
             RateLimiter.waitForPermission(rateLimiter);
-            response = ses.sendEmail(claim.request());
+            sesMessageId = gateway.send(claim.request());
         } catch (RuntimeException e) {
             return handleFailure(command, claim, e);
         }
@@ -104,10 +102,10 @@ public class SendService {
         // Outside the try on purpose: if recording fails, SES has already accepted the email, so
         // this must not be treated as an SES failure. The exception reaches the listener, SQS
         // redelivers after the lease expires, and that is the documented at-least-once window.
-        tx.executeWithoutResult(status -> recordSent(command, response.messageId(), claim.attempt()));
-        log.info("Sent message {} to {} (attempt {}, SES id {})", command.messageId(),
-                Pii.maskEmail(claim.recipient()), claim.attempt(), response.messageId());
-        return SendOutcome.sent(response.messageId());
+        tx.executeWithoutResult(status -> recordSent(command, sesMessageId, claim.attempt()));
+        log.info("Sent message {} to {} via {} (attempt {}, SES id {})", command.messageId(),
+                Pii.maskEmail(claim.recipient()), gateway.name(), claim.attempt(), sesMessageId);
+        return SendOutcome.sent(sesMessageId);
     }
 
     // --- Step 1: claim ----------------------------------------------------------------------
@@ -164,6 +162,7 @@ public class SendService {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("sesMessageId", sesMessageId);
         detail.put("configurationSet", message.getConfigurationSet());
+        detail.put("api", gateway.name());
         detail.put("attempt", attempt);
         events.save(MessageEvent.of(message.getId(), "SENT", detail, now));
     }

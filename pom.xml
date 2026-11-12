@@ -84,6 +84,11 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>sesv2</artifactId>
         </dependency>
+        <!-- SES v1: only for local runs against LocalStack's free edition (pigeon.ses.api=v1) -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>ses</artifactId>
+        </dependency>
 
         <!-- Resilience: rate limiting and retries around SES calls (used from Phase 3) -->
         <dependency>

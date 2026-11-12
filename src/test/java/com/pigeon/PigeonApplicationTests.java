@@ -10,6 +10,7 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -31,6 +32,10 @@ import org.testcontainers.utility.MountableFile;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("local")
 @Testcontainers
+// This class owns its containers and stops them when it finishes, so close its Spring context too.
+// Otherwise the cached context keeps running the outbox relay and SQS listener against containers
+// that are gone, filling later test output with connection errors.
+@DirtiesContext
 class PigeonApplicationTests {
 
     private static final String INIT_SCRIPT = "localstack/init/ready.d/01-pigeon-resources.sh";
@@ -48,9 +53,7 @@ class PigeonApplicationTests {
                             MountableFile.forHostPath(INIT_SCRIPT, 0755),
                             "/etc/localstack/init/ready.d/01-pigeon-resources.sh")
                     // Wait for the init script to finish, not just for the port to open.
-                    .waitingFor(Wait.forHttp("/_localstack/init/ready")
-                            .forPort(4566)
-                            .forResponsePredicate(body -> body.matches("(?s).*\"completed\":\\s*true.*"))
+                    .waitingFor(Wait.forLogMessage(".*PIGEON INIT COMPLETE.*\\n", 1)
                             .withStartupTimeout(Duration.ofMinutes(3)));
 
     @DynamicPropertySource

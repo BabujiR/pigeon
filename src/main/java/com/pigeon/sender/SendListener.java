@@ -43,7 +43,7 @@ public class SendListener {
             if (outcome.kind() == SendOutcome.Kind.RETRY) {
                 int seconds = (int) Math.max(1, Math.min(outcome.retryAfter().toSeconds(), 43_200));
                 try {
-                    visibility.changeTo(seconds).join();
+                    visibility.changeTo(seconds);   // blocking in Spring Cloud AWS 3.x; returns void
                 } catch (RuntimeException e) {
                     log.warn("Could not change visibility for {}: {}", command.messageId(), e.getMessage());
                 }

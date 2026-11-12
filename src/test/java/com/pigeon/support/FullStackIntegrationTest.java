@@ -32,9 +32,10 @@ public abstract class FullStackIntegrationTest {
                     .withEnv("AWS_DEFAULT_REGION", "us-east-1")
                     .withCopyFileToContainer(MountableFile.forHostPath(INIT_SCRIPT, 0755),
                             "/etc/localstack/init/ready.d/01-pigeon-resources.sh")
-                    .waitingFor(Wait.forHttp("/_localstack/init/ready")
-                            .forPort(4566)
-                            .forResponsePredicate(body -> body.matches("(?s).*\"completed\":\\s*true.*"))
+                    // Wait for the init script's last line in LocalStack's own output. Polling the
+                    // /_localstack/init/ready URL from the host proved unreliable on Docker Desktop for
+                    // Windows ("Unexpected end of file from server"); the log does not depend on host networking.
+                    .waitingFor(Wait.forLogMessage(".*PIGEON INIT COMPLETE.*\\n", 1)
                             .withStartupTimeout(Duration.ofMinutes(3)));
 
     static {

@@ -190,6 +190,7 @@ sequenceDiagram
 | Concern | Local (this repo) | AWS |
 |---|---|---|
 | SES, SQS, SNS | LocalStack 4.14 on port 4566 | Real services, IAM role credentials |
+| SES API | v1 `SendEmail` (`pigeon.ses.api=v1`), because LocalStack's free edition returns 501 for SES v2. Custom headers such as List-Unsubscribe are not sent locally | v2 `SendEmail` with headers, tags and configuration set |
 | Delivery events | `LocalEventSimulator` publishes SES-format events (Phase 4) | SES configuration set event destination → SNS |
 | Database | Postgres 16 container | Amazon RDS / Aurora PostgreSQL |
 | Domain authentication | Not needed | SPF, DKIM (Easy DKIM), custom MAIL FROM, DMARC |

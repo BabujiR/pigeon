@@ -3,6 +3,8 @@ package com.pigeon.sender;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
+import java.util.Set;
+import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.sesv2.model.AccountSuspendedException;
 import software.amazon.awssdk.services.sesv2.model.BadRequestException;
@@ -23,6 +25,14 @@ import software.amazon.awssdk.services.sesv2.model.TooManyRequestsException;
 public final class SesErrorClassifier {
 
     public enum Decision { RETRY, PERMANENT }
+
+    /** SES v1 reports these as error codes on a generic SesException rather than as subclasses. */
+    private static final Set<String> RETRY_CODES = Set.of(
+            "Throttling", "ThrottlingException", "TooManyRequestsException", "LimitExceeded",
+            "LimitExceededException", "MaxSendingRateExceeded", "ServiceUnavailable", "InternalFailure");
+    private static final Set<String> PERMANENT_CODES = Set.of(
+            "MessageRejected", "MailFromDomainNotVerifiedException", "ConfigurationSetDoesNotExist",
+            "InvalidParameterValue", "ValidationError");
 
     private SesErrorClassifier() {
     }
@@ -50,6 +60,17 @@ public final class SesErrorClassifier {
         }
         if (e instanceof SesV2Exception ses) {
             return ses.statusCode() >= 500 ? Decision.RETRY : Decision.PERMANENT;
+        }
+        // SES v1 (and any other AWS service error): decide by error code, then by HTTP status.
+        if (e instanceof AwsServiceException aws) {
+            String code = aws.awsErrorDetails() == null ? null : aws.awsErrorDetails().errorCode();
+            if (code != null && RETRY_CODES.contains(code)) {
+                return Decision.RETRY;
+            }
+            if (code != null && PERMANENT_CODES.contains(code)) {
+                return Decision.PERMANENT;
+            }
+            return aws.statusCode() >= 500 || aws.statusCode() == 429 ? Decision.RETRY : Decision.PERMANENT;
         }
         // Network, DNS, timeouts.
         if (e instanceof SdkClientException) {
