@@ -46,6 +46,12 @@ pigeon:
     base-backoff: 10s
     max-backoff: 5m
     from-display-name: Acme Benefits
+  events:
+    enabled: true
+    soft-bounce-threshold: 3      # transient bounces ...
+    soft-bounce-window: 7d        # ... within this window suppress the address
+    simulator:
+      enabled: false              # local profile only; on AWS real SES events arrive via SNS
   outbox:
     relay:
       enabled: true

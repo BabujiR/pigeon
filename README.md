@@ -12,7 +12,7 @@ reputation monitoring, and SPF / DKIM / DMARC domain authentication.
 | 1 | Database schema, seeded templates, TemplateRenderer | Done |
 | 2 | Communication API: validation, idempotency, suppression check, outbox | Done |
 | 3 | Outbox relay, sender worker calling SES, rate limiting, retries, DLQ | Done |
-| 4 | Event pipeline, suppression rules, local event simulator | Planned |
+| 4 | Event pipeline, suppression rules, local event simulator | Done |
 | 5 | Reputation metrics, suppression API, batch sending | Planned |
 | 6 | Structured logging, PII masking, error handling | Planned |
 | 7 | Docs, demo scripts, full run-through | Planned |
@@ -191,7 +191,7 @@ sequenceDiagram
 |---|---|---|
 | SES, SQS, SNS | LocalStack 4.14 on port 4566 | Real services, IAM role credentials |
 | SES API | v1 `SendEmail` (`pigeon.ses.api=v1`), because LocalStack's free edition returns 501 for SES v2. Custom headers such as List-Unsubscribe are not sent locally | v2 `SendEmail` with headers, tags and configuration set |
-| Delivery events | `LocalEventSimulator` publishes SES-format events (Phase 4) | SES configuration set event destination → SNS |
+| Delivery events | `LocalEventSimulator` publishes SES-format events to SNS after each send | SES configuration set event destination → SNS |
 | Database | Postgres 16 container | Amazon RDS / Aurora PostgreSQL |
 | Domain authentication | Not needed | SPF, DKIM (Easy DKIM), custom MAIL FROM, DMARC |
 
@@ -287,6 +287,37 @@ Invoke-RestMethod "http://localhost:8080/v1/communications/$($r.requestId)" | Co
 | Same SQS message delivered twice | Second delivery sees `SENT` (or an active lease) and does nothing |
 | Unreadable or unknown message | Thrown 3 times, then SQS moves it to `pigeon-send-dlq` |
 | SQS unreachable | Relay keeps rows `PENDING`, pauses up to 30s between tries, `FAILED` after 20 attempts |
+
+## Close the loop: bounces, complaints, suppression (Phase 4)
+
+Locally, `LocalEventSimulator` answers each send the way the SES mailbox simulator would, by
+publishing real SES event JSON to `pigeon-events-topic`. The event processor cannot tell it from
+the real thing. Send to these addresses (add `+anything` before the `@` to reuse them):
+
+| Recipient | Events | Final status | Suppression |
+|---|---|---|---|
+| `success@simulator.amazonses.com` (or any normal address) | Delivery | `DELIVERED` | none |
+| `bounce@simulator.amazonses.com` | Bounce, Permanent, 5.1.1 | `BOUNCED` | `HARD_BOUNCE` |
+| `complaint@simulator.amazonses.com` | Delivery, then Complaint | `COMPLAINED` | `COMPLAINT` |
+| `suppressionlist@simulator.amazonses.com` | Bounce, OnAccountSuppressionList | `BOUNCED` | `ACCOUNT_SUPPRESSION_LIST` |
+| any address containing `mailboxfull` | Bounce, Transient, 4.2.2 | `BOUNCED` | `REPEATED_SOFT_BOUNCE` on the 3rd within 7 days |
+
+The next request to a suppressed address returns `202` with `"status": "SUPPRESSED"` and is never sent.
+
+How events are handled:
+- **Duplicates:** the SNS MessageId is recorded in `processed_event` in the same transaction, so a redelivered event changes nothing.
+- **Out of order:** status only moves forward (SENT → DELIVERED → BOUNCED → COMPLAINED); a late Delivery cannot undo a Complaint.
+- **Too early:** an event that arrives before Pigeon has recorded `SENT` is retried, not lost.
+- **Unknown message:** a bounce or complaint still suppresses the address.
+
+```powershell
+# Bounce, then watch the next request get suppressed
+$b = '{"templateId":"payment-receipt","recipient":"bounce+demo@simulator.amazonses.com","stream":"TRANSACTIONAL","variables":{"firstName":"Dana","amount":"$412.60","paidOn":"November 6, 2026","last4":"4417"}}'
+$r = Invoke-RestMethod -Method Post -Uri http://localhost:8080/v1/communications -Headers @{ "Idempotency-Key" = "bounce-1" } -ContentType "application/json" -Body $b
+Start-Sleep -Seconds 3
+Invoke-RestMethod "http://localhost:8080/v1/communications/$($r.requestId)" | ConvertTo-Json -Depth 5   # BOUNCED
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/v1/communications -Headers @{ "Idempotency-Key" = "bounce-2" } -ContentType "application/json" -Body $b   # SUPPRESSED
+```
 
 ## Tests
 ```powershell

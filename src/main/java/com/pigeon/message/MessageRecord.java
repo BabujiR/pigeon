@@ -160,6 +160,43 @@ public class MessageRecord implements Persistable<UUID> {
         this.updatedAt = now;
     }
 
+    /**
+     * Applies a delivery outcome reported by SES (Phase 4). Events can arrive out of order and
+     * more than once, so the status only ever moves forward:
+     * SENT -> DELIVERED -> BOUNCED -> COMPLAINED. A late Delivery after a Complaint changes nothing.
+     *
+     * @return true if the status changed
+     */
+    public boolean applyOutcome(MessageStatus outcome, Instant now) {
+        if (outcomeRank(status) < 0 || outcomeRank(outcome) <= outcomeRank(status)) {
+            return false;
+        }
+        this.status = outcome;
+        this.updatedAt = now;
+        return true;
+    }
+
+    /** SES rejected the message after accepting it (Reject or Rendering Failure event). */
+    public boolean markRejectedBySes(String reason, Instant now) {
+        if (status != MessageStatus.SENT) {
+            return false;
+        }
+        this.status = MessageStatus.FAILED;
+        this.lastError = truncate(reason);
+        this.updatedAt = now;
+        return true;
+    }
+
+    private static int outcomeRank(MessageStatus s) {
+        return switch (s) {
+            case SENT -> 1;
+            case DELIVERED -> 2;
+            case BOUNCED -> 3;
+            case COMPLAINED -> 4;
+            default -> -1;    // ACCEPTED, QUEUED, SUPPRESSED, FAILED: SES outcomes do not apply
+        };
+    }
+
     private static String truncate(String error) {
         if (error == null) {
             return null;

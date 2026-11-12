@@ -19,9 +19,11 @@ import org.testcontainers.containers.PostgreSQLContainer;
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
 @TestPropertySource(properties = {
-        // No AWS in these tests: keep the outbox rows PENDING and start no SQS listener.
+        // No AWS in these tests: keep the outbox rows PENDING and start no SQS listeners or simulator.
         "pigeon.outbox.relay.enabled=false",
-        "pigeon.sender.enabled=false"
+        "pigeon.sender.enabled=false",
+        "pigeon.events.enabled=false",
+        "pigeon.events.simulator.enabled=false"
 })
 public abstract class PostgresIntegrationTest {
 

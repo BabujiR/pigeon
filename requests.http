@@ -107,6 +107,38 @@ Content-Type: application/json
 
 { "templateId": "payment-receipt", "recipient": "dana@example.com", "stream": "TRANSACTIONAL", "variables": {} }
 
+### 12. Feedback loop: hard bounce -> BOUNCED, address suppressed (check status after ~2s)
+POST {{base}}/v1/communications
+Content-Type: application/json
+Idempotency-Key: demo-bounce-001
+
+{ "templateId": "payment-receipt", "recipient": "bounce+demo@simulator.amazonses.com", "stream": "TRANSACTIONAL",
+  "variables": { "firstName": "Dana", "amount": "$412.60", "paidOn": "November 6, 2026", "last4": "4417" } }
+
+### 13. Same address again -> 202 SUPPRESSED, never sent
+POST {{base}}/v1/communications
+Content-Type: application/json
+Idempotency-Key: demo-bounce-002
+
+{ "templateId": "payment-receipt", "recipient": "bounce+demo@simulator.amazonses.com", "stream": "TRANSACTIONAL",
+  "variables": { "firstName": "Dana", "amount": "$412.60", "paidOn": "November 6, 2026", "last4": "4417" } }
+
+### 14. Complaint -> DELIVERED, then COMPLAINED, address suppressed
+POST {{base}}/v1/communications
+Content-Type: application/json
+Idempotency-Key: demo-complaint-001
+
+{ "templateId": "payment-receipt", "recipient": "complaint+demo@simulator.amazonses.com", "stream": "TRANSACTIONAL",
+  "variables": { "firstName": "Dana", "amount": "$412.60", "paidOn": "November 6, 2026", "last4": "4417" } }
+
+### 15. Success -> DELIVERED
+POST {{base}}/v1/communications
+Content-Type: application/json
+Idempotency-Key: demo-success-001
+
+{ "templateId": "payment-receipt", "recipient": "success+demo@simulator.amazonses.com", "stream": "TRANSACTIONAL",
+  "variables": { "firstName": "Dana", "amount": "$412.60", "paidOn": "November 6, 2026", "last4": "4417" } }
+
 ### 10. Status and history (paste a requestId from request 1)
 GET {{base}}/v1/communications/00000000-0000-0000-0000-000000000000
 Accept: application/json

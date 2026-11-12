@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -59,6 +60,7 @@ public class SendService {
     private final SenderProperties props;
     private final RateLimiter rateLimiter;
     private final TransactionTemplate tx;
+    private final ApplicationEventPublisher publisher;
     private final Clock clock = Clock.systemUTC();
 
     public SendService(MessageRecordRepository messages,
@@ -69,7 +71,8 @@ public class SendService {
                        EmailGateway gateway,
                        SenderProperties props,
                        RateLimiterRegistry rateLimiters,
-                       PlatformTransactionManager transactionManager) {
+                       PlatformTransactionManager transactionManager,
+                       ApplicationEventPublisher publisher) {
         this.messages = messages;
         this.events = events;
         this.suppression = suppression;
@@ -83,6 +86,7 @@ public class SendService {
                 .timeoutDuration(Duration.ofSeconds(30))
                 .build());
         this.tx = new TransactionTemplate(transactionManager);
+        this.publisher = publisher;
     }
 
     public SendOutcome process(SendCommand command) {
@@ -105,6 +109,8 @@ public class SendService {
         tx.executeWithoutResult(status -> recordSent(command, sesMessageId, claim.attempt()));
         log.info("Sent message {} to {} via {} (attempt {}, SES id {})", command.messageId(),
                 Pii.maskEmail(claim.recipient()), gateway.name(), claim.attempt(), sesMessageId);
+        // After the commit: lets the local event simulator (Phase 4) react as SES would.
+        publisher.publishEvent(new EmailSentEvent(command.messageId(), sesMessageId, claim.request(), clock.instant()));
         return SendOutcome.sent(sesMessageId);
     }
 

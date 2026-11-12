@@ -19,6 +19,12 @@ management:
       show-details: always        # locally we want to see every component's details
 
 pigeon:
+  events:
+    simulator:
+      # LocalStack's free edition does not publish SES events, so Pigeon publishes realistic ones
+      # itself after each send (see LocalEventSimulator for which address produces what).
+      enabled: true
+      delay: 300ms
   ses:
     # LocalStack's free edition answers SES v2 calls with 501, so send through the v1 API
     # locally. Production leaves this unset and uses SES v2.

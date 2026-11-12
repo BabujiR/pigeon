@@ -14,4 +14,8 @@ public interface MessageRecordRepository extends JpaRepository<MessageRecord, UU
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select m from MessageRecord m where m.id = :id")
     Optional<MessageRecord> findForUpdate(@Param("id") UUID id);
+
+    /** Fallback lookup for SES events that lack our messageRecordId tag. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<MessageRecord> findBySesMessageId(String sesMessageId);
 }

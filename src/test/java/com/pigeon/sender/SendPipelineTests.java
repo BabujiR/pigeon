@@ -27,6 +27,8 @@ import org.springframework.test.web.servlet.MvcResult;
 /**
  * Phase 3 end to end: API -> outbox -> relay -> SQS -> sender -> SES (LocalStack).
  * LocalStack keeps every email SES "sent"; GET /_aws/ses returns them for inspection.
+ * Since Phase 4 the local event simulator follows each send with a Delivery event, so a message
+ * may already be DELIVERED when these tests look; both count as sent.
  */
 class SendPipelineTests extends FullStackIntegrationTest {
 
@@ -99,7 +101,7 @@ class SendPipelineTests extends FullStackIntegrationTest {
         String to = recipient();
         UUID id = accept(to, "TRANSACTIONAL");
 
-        await().atMost(WAIT).untilAsserted(() -> assertThat(statusOf(id)).isEqualTo("SENT"));
+        await().atMost(WAIT).untilAsserted(() -> assertThat(statusOf(id)).isIn("SENT", "DELIVERED"));
 
         String sesId = jdbc.queryForObject("select ses_message_id from message_record where id = ?", String.class, id);
         assertThat(sesId).isNotBlank();
@@ -107,8 +109,9 @@ class SendPipelineTests extends FullStackIntegrationTest {
                 .isEqualTo(1);
         assertThat(jdbc.queryForObject("select status from outbox where message_id = ?", String.class, id))
                 .isEqualTo("PUBLISHED");
+        // DELIVERY may follow from the local event simulator (Phase 4).
         assertThat(jdbc.queryForList("select event_type from message_event where message_id = ? order by id",
-                String.class, id)).containsExactly("ACCEPTED", "QUEUED", "SENT");
+                String.class, id)).startsWith("ACCEPTED", "QUEUED", "SENT");
 
         List<JsonNode> emails = sesMessagesTo(to);
         assertThat(emails).hasSize(1);
@@ -124,7 +127,7 @@ class SendPipelineTests extends FullStackIntegrationTest {
     void bulkEmailIsSentThroughTheBulkConfigurationSet() throws Exception {
         UUID id = accept(recipient(), "BULK");
 
-        await().atMost(WAIT).untilAsserted(() -> assertThat(statusOf(id)).isEqualTo("SENT"));
+        await().atMost(WAIT).untilAsserted(() -> assertThat(statusOf(id)).isIn("SENT", "DELIVERED"));
         assertThat(jdbc.queryForObject("select configuration_set from message_record where id = ?", String.class, id))
                 .isEqualTo("pigeon-bulk-prod");
     }
@@ -133,7 +136,7 @@ class SendPipelineTests extends FullStackIntegrationTest {
     void duplicateDeliveryOfAnAlreadySentMessageSendsNothing() throws Exception {
         String to = recipient();
         UUID id = accept(to, "TRANSACTIONAL");
-        await().atMost(WAIT).untilAsserted(() -> assertThat(statusOf(id)).isEqualTo("SENT"));
+        await().atMost(WAIT).untilAsserted(() -> assertThat(statusOf(id)).isIn("SENT", "DELIVERED"));
 
         SendOutcome outcome = sendService.process(new SendCommand(id, "corr-dup"));
 
@@ -180,7 +183,7 @@ class SendPipelineTests extends FullStackIntegrationTest {
         SendOutcome outcome = sendService.process(new SendCommand(id, "corr-expired"));
 
         assertThat(outcome.kind()).isEqualTo(SendOutcome.Kind.SENT);
-        assertThat(statusOf(id)).isEqualTo("SENT");
+        assertThat(statusOf(id)).isIn("SENT", "DELIVERED");
         assertThat(sesMessagesTo(to)).hasSize(1);
     }
 
