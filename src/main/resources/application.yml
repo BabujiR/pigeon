@@ -52,6 +52,17 @@ pigeon:
     soft-bounce-window: 7d        # ... within this window suppress the address
     simulator:
       enabled: false              # local profile only; on AWS real SES events arrive via SNS
+  metrics:
+    minimum-volume: 20            # sends in the window before rates are judged
+    bounce-warning: 2.0           # our early alarm, % (hard bounces)
+    bounce-review: 5.0            # SES review level, %
+    bounce-pause: 10.0            # SES pause level, %
+    complaint-warning: 0.05
+    complaint-review: 0.1
+    complaint-pause: 0.5
+    default-window: 24h
+    max-window: 31d
+    refresh-interval-ms: 30000    # Prometheus gauge refresh
   outbox:
     relay:
       enabled: true

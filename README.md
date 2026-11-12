@@ -13,7 +13,7 @@ reputation monitoring, and SPF / DKIM / DMARC domain authentication.
 | 2 | Communication API: validation, idempotency, suppression check, outbox | Done |
 | 3 | Outbox relay, sender worker calling SES, rate limiting, retries, DLQ | Done |
 | 4 | Event pipeline, suppression rules, local event simulator | Done |
-| 5 | Reputation metrics, suppression API, batch sending | Planned |
+| 5 | Reputation metrics, suppression API, batch sending | Done |
 | 6 | Structured logging, PII masking, error handling | Planned |
 | 7 | Docs, demo scripts, full run-through | Planned |
 
@@ -318,6 +318,52 @@ Start-Sleep -Seconds 3
 Invoke-RestMethod "http://localhost:8080/v1/communications/$($r.requestId)" | ConvertTo-Json -Depth 5   # BOUNCED
 Invoke-RestMethod -Method Post -Uri http://localhost:8080/v1/communications -Headers @{ "Idempotency-Key" = "bounce-2" } -ContentType "application/json" -Body $b   # SUPPRESSED
 ```
+
+## Reputation, suppression list and batches (Phase 5)
+
+### Reputation: `GET /v1/metrics`
+Judges sending the way SES does: **hard** bounces and complaints divided by emails sent, over a
+window (default 24h; `?window=7d` or `?from=...&to=...`). Reported overall and per configuration
+set, so you can see which stream is causing trouble.
+
+| Status | Hard bounce rate | Complaint rate | What SES does |
+|---|---|---|---|
+| `HEALTHY` | below 5% | below 0.1% | nothing |
+| `HEALTHY` + `earlyWarning` | 2% or more | 0.05% or more | nothing yet; our own alarm |
+| `UNDER_REVIEW` | 5% or more | 0.1% or more | account placed under review |
+| `PAUSED` | 10% or more | 0.5% or more | sending may be paused |
+
+Below 20 sends in the window the rates are shown but not judged (`"representative": false`).
+Soft bounces are reported separately and do not count, as on SES. The same numbers are exported to
+Prometheus at `/actuator/prometheus` (`pigeon_reputation_bounce_rate_percent`,
+`pigeon_reputation_status`, `pigeon_outbox_pending` and more) for alarms.
+
+```powershell
+Invoke-RestMethod "http://localhost:8080/v1/metrics?window=1h" | ConvertTo-Json -Depth 6
+```
+
+### Suppression list: `/v1/suppressions`
+| Call | Result |
+|---|---|
+| `GET /v1/suppressions?reason=HARD_BOUNCE&page=0&size=50` | Newest first |
+| `GET /v1/suppressions/{address}` | One entry, or 404 |
+| `POST /v1/suppressions` `{"address":"...","detail":"..."}` | 201 added (reason `MANUAL`), 200 if already there |
+| `DELETE /v1/suppressions/{address}` | 204; also resets the soft-bounce count |
+| `DELETE` of a `COMPLAINT` or `ACCOUNT_SUPPRESSION_LIST` entry | 409 unless `?force=true`: those people asked not to be emailed, or SES will refuse them |
+
+### Batches: `POST /v1/communications/batch`
+Up to 1,000 recipients of one template. Each recipient becomes a normal message through the same
+validation, suppression and outbox path. Bad rows are reported per item and do not fail the batch;
+retrying with the same `Idempotency-Key` queues nothing twice.
+
+```json
+{ "templateId": "payment-receipt", "stream": "BULK",
+  "sharedVariables": { "amount": "$412.60", "paidOn": "November 6, 2026", "last4": "4417" },
+  "recipients": [
+    { "recipient": "success+1@simulator.amazonses.com", "variables": { "firstName": "Ana" } },
+    { "recipient": "bounce+1@simulator.amazonses.com",  "variables": { "firstName": "Ben" } } ] }
+```
+Response: `202` with `counts` (`QUEUED`, `SUPPRESSED`, `REJECTED`) and a result per item.
 
 ## Tests
 ```powershell
