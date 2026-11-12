@@ -5,6 +5,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,6 +78,33 @@ public class SuppressionService {
                         """,
                 Integer.class, normalized, Timestamp.from(occurredAt.minus(window)));
         return count == null ? 0 : count;
+    }
+
+    /** Newest first, optionally filtered by reason. */
+    public Page<Suppression> list(SuppressionReason reason, int page, int size) {
+        PageRequest request = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return reason == null ? repository.findAll(request) : repository.findByReason(reason, request);
+    }
+
+    /**
+     * Removes an address so Pigeon may email it again, and resets its soft-bounce count.
+     *
+     * <p>Complaints and SES account-level suppressions are protected: the person asked not to be
+     * emailed, or SES itself will refuse the address. Removing them needs {@code force}, which the
+     * API exposes as an explicit query parameter so it never happens by accident.
+     */
+    @Transactional
+    public Suppression remove(String address, boolean force) {
+        String normalized = normalize(address);
+        Suppression existing = repository.findById(normalized)
+                .orElseThrow(() -> new SuppressionNotFoundException(normalized));
+        if (!force && (existing.getReason() == SuppressionReason.COMPLAINT
+                || existing.getReason() == SuppressionReason.ACCOUNT_SUPPRESSION_LIST)) {
+            throw new SuppressionRemovalBlockedException(normalized, existing.getReason());
+        }
+        repository.delete(existing);
+        jdbc.update("delete from soft_bounce where address = ?", normalized);
+        return existing;
     }
 
     private static String truncate(String value, int max) {
