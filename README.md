@@ -15,11 +15,33 @@ reputation monitoring, and SPF / DKIM / DMARC domain authentication.
 | 4 | Event pipeline, suppression rules, local event simulator | Done |
 | 5 | Reputation metrics, suppression API, batch sending | Done |
 | 6 | Structured logging, correlation ids, PII masking, error handling | Done |
-| 7 | Docs, demo scripts, full run-through | Planned |
+| 7 | Pigeon Console, DNS and AWS docs, scripted run-through of every scenario | Done |
+
+## Pigeon Console (the real API, in a browser)
+
+Start the app and open **http://localhost:8080/console**. Every button calls the live API on this
+server; nothing in the page is simulated. (The Pigeon Lab at `/` is a separate, self-contained demo.)
+
+| Tab | What it does | API |
+|---|---|---|
+| Send | Pick a template and a scenario (Delivered, Hard bounce, Complaint, SES suppression list, Mailbox full), send, and watch the status move ACCEPTED → QUEUED → SENT → outcome | `POST /v1/communications`, `GET /v1/communications/{id}` |
+| Messages | Recent messages with a status filter; open one for its full history | `GET /v1/communications?status=&limit=` |
+| Batch | Paste `address, firstName` lines; per-item results | `POST /v1/communications/batch` |
+| Reputation | Status banner, bounce and complaint rates against the SES thresholds, per stream | `GET /v1/metrics` |
+| Suppressions | List, add, remove (complaints ask for confirmation) | `/v1/suppressions` |
+| API activity | Every call the page made: request, response and the same call as a PowerShell command | |
+
+![Send and follow a message](docs/images/console-send.png)
+![Reputation against SES thresholds](docs/images/console-reputation.png)
+![API activity with PowerShell equivalents](docs/images/console-activity.png)
+
+Other clients for the same API: `requests.http` (IntelliJ HTTP client), the PowerShell commands
+in this README and in the console's API activity tab, or any HTTP tool such as Postman or curl.
 
 ## Pigeon Lab (interactive)
 
-Start the app and open **http://localhost:8080/**. The lab is served by Pigeon itself
+Start the app and open **http://localhost:8080/**. This is a self-contained teaching demo with its
+own in-browser simulator; it does not call the API (use the Pigeon Console for that). It is served by Pigeon itself
 (`src/main/resources/static/index.html`) and runs entirely in your browser:
 
 | Tab | What you can do |
@@ -390,6 +412,30 @@ mvn spring-boot:run "-Dspring-boot.run.profiles=local" | Select-String "order-44
 - **Errors you can report:** every error response includes `correlationId`; unexpected errors are a
   plain 500 with no stack trace or internal detail, while the full exception is logged.
 - **Graceful shutdown:** in-flight requests and SQS messages finish (up to 30s) before the app stops.
+
+## Run every scenario (clean start)
+
+`scripts/run-scenarios.ps1` runs 21 scenarios against the real app and prints PASS or FAIL for each:
+health, templates, delivery, idempotent replay, key reuse, validation errors, XML, BULK, hard bounce
+and suppression, complaint and forced removal, account suppression list, three soft bounces, batch,
+manual suppression, metrics, correlation ids, recent messages, LocalStack's sent mail, and both web pages.
+
+```powershell
+# From a clean slate: wipe containers and database, start everything, run, stop the app
+.\scripts\run-scenarios.ps1 -CleanStart -StartApp
+
+# Against an app that is already running
+.\scripts\run-scenarios.ps1
+```
+
+It writes `target\scenario-report.md` and exits with the number of failures. If Windows blocks the
+script, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
+
+## Going to AWS
+
+- [docs/DNS.md](docs/DNS.md): SPF, Easy DKIM, custom MAIL FROM, DMARC, alignment and a safe DMARC rollout
+- [docs/AWS-DEPLOY.md](docs/AWS-DEPLOY.md): SES identity, sandbox, configuration sets with SNS event
+  destinations, queues, least-privilege IAM, RDS, ECS, alarms and production access
 
 ## Tests
 ```powershell

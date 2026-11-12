@@ -2,6 +2,8 @@ package com.pigeon.message;
 
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -18,4 +20,6 @@ public interface MessageRecordRepository extends JpaRepository<MessageRecord, UU
     /** Fallback lookup for SES events that lack our messageRecordId tag. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<MessageRecord> findBySesMessageId(String sesMessageId);
+
+    Page<MessageRecord> findByStatus(MessageStatus status, Pageable pageable);
 }

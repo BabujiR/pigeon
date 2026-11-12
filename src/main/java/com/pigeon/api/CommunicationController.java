@@ -2,9 +2,13 @@ package com.pigeon.api;
 
 import com.pigeon.message.CommunicationService;
 import com.pigeon.message.CommunicationService.AcceptResult;
+import com.pigeon.message.MessageRecord;
+import com.pigeon.message.MessageStatus;
 import com.pigeon.support.CorrelationId;
 import jakarta.validation.Valid;
 import java.net.URI;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -53,6 +58,24 @@ public class CommunicationController {
                 .location(URI.create(body.statusUrl()))
                 .header(REPLAYED, String.valueOf(result.replayed()))
                 .body(body);
+    }
+
+    /** One row of {@code GET /v1/communications}. History and merge values stay on the detail call. */
+    public record MessageSummary(UUID requestId, String status, String recipient, String templateId,
+                                 int templateVersion, String stream, String correlationId, int attemptCount,
+                                 Instant createdAt, Instant updatedAt) {
+        static MessageSummary of(MessageRecord m) {
+            return new MessageSummary(m.getId(), m.getStatus().name(), m.getRecipient(), m.getTemplateId(),
+                    m.getTemplateVersion(), m.getStream().name(), m.getCorrelationId(), m.getAttemptCount(),
+                    m.getCreatedAt(), m.getUpdatedAt());
+        }
+    }
+
+    /** Recent messages, newest first: {@code ?status=BOUNCED&limit=50} (limit 1 to 200). */
+    @GetMapping(produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_XML_VALUE})
+    public List<MessageSummary> recent(@RequestParam(required = false) MessageStatus status,
+                                       @RequestParam(defaultValue = "50") int limit) {
+        return service.recent(status, limit).stream().map(MessageSummary::of).toList();
     }
 
     @GetMapping(path = "/{requestId}", produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_XML_VALUE})

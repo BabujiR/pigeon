@@ -19,6 +19,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -177,6 +179,14 @@ public class CommunicationService {
             List<MessageEvent> history = events.findByMessageIdOrderByOccurredAtAscIdAsc(id);
             return new MessageView(m, history);
         });
+    }
+
+    /** Newest first, optionally one status only. For operators and the Pigeon Console. */
+    public List<MessageRecord> recent(MessageStatus status, int limit) {
+        PageRequest page = PageRequest.of(0, Math.max(1, Math.min(limit, 200)), Sort.by(Sort.Direction.DESC, "createdAt"));
+        return readOnlyTx.execute(s -> status == null
+                ? messages.findAll(page).getContent()
+                : messages.findByStatus(status, page).getContent());
     }
 
     public record AcceptResult(MessageRecord message, boolean replayed, String suppressionReason) {

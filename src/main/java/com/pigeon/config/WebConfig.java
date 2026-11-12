@@ -3,6 +3,7 @@ package com.pigeon.config;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
 import org.springframework.web.servlet.config.annotation.ContentNegotiationConfigurer;
+import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
@@ -18,5 +19,12 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void configureContentNegotiation(ContentNegotiationConfigurer configurer) {
         configurer.defaultContentType(MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML);
+    }
+
+    /** Short URLs for the Pigeon Console (static/console/index.html). The Lab stays at "/". */
+    @Override
+    public void addViewControllers(ViewControllerRegistry registry) {
+        registry.addRedirectViewController("/console", "/console/index.html");
+        registry.addRedirectViewController("/console/", "/console/index.html");
     }
 }
