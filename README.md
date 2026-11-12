@@ -5,6 +5,23 @@ An enterprise transactional email platform built with Java 21 and Spring Boot 3:
 sending through SQS, event-driven bounce and complaint processing, suppression management,
 reputation monitoring, and SPF / DKIM / DMARC domain authentication.
 
+### Open the apps
+
+Start Pigeon first (`docker compose up -d`, then `mvn spring-boot:run "-Dspring-boot.run.profiles=local"`
+or the **Pigeon (local)** run configuration in IntelliJ). Then click:
+
+| | Link | What it is |
+|---|---|---|
+| ▶ | **[Pigeon Lab (demo)](http://localhost:8080/)** | Teaching demo with its own in-browser simulator |
+| ▶ | **[Pigeon Console (live API)](http://localhost:8080/console)** | Real sends, messages, batches, reputation, suppressions |
+| | [Health](http://localhost:8080/actuator/health) · [Metrics API](http://localhost:8080/v1/metrics) · [Templates API](http://localhost:8080/v1/templates) · [Prometheus](http://localhost:8080/actuator/prometheus) | Raw endpoints |
+| | [LocalStack sent mail](http://localhost:4566/_aws/ses) | Every email SES "sent" locally |
+
+The links work on the machine running Pigeon. **No app running?** The Lab is a single self-contained
+file: open [`src/main/resources/static/index.html`](src/main/resources/static/index.html) from your
+copy of the project (double-click it in Explorer, or right-click it in IntelliJ → *Open In* → *Browser*)
+and it works without Pigeon, Docker or a network.
+
 ## Build status
 | Phase | Scope | Status |
 |---|---|---|
@@ -19,7 +36,7 @@ reputation monitoring, and SPF / DKIM / DMARC domain authentication.
 
 ## Pigeon Console (the real API, in a browser)
 
-Start the app and open **http://localhost:8080/console**. Every button calls the live API on this
+**▶ [Open the Pigeon Console](http://localhost:8080/console)** (Pigeon must be running). Every button calls the live API on this
 server; nothing in the page is simulated. (The Pigeon Lab at `/` is a separate, self-contained demo.)
 
 | Tab | What it does | API |
@@ -40,9 +57,13 @@ in this README and in the console's API activity tab, or any HTTP tool such as P
 
 ## Pigeon Lab (interactive)
 
-Start the app and open **http://localhost:8080/**. This is a self-contained teaching demo with its
-own in-browser simulator; it does not call the API (use the Pigeon Console for that). It is served by Pigeon itself
-(`src/main/resources/static/index.html`) and runs entirely in your browser:
+**▶ [Open the Pigeon Lab](http://localhost:8080/)** (with Pigeon running), or open
+[`src/main/resources/static/index.html`](src/main/resources/static/index.html) straight from the project
+folder; it needs nothing else.
+
+This is a self-contained teaching demo with its own in-browser simulator; it does not call the API
+(use the [Pigeon Console](http://localhost:8080/console) for that). It is served by Pigeon itself from
+`src/main/resources/static/index.html` and runs entirely in your browser:
 
 | Tab | What you can do |
 |---|---|
