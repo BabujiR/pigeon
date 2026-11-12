@@ -81,14 +81,19 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                 "Something went wrong on our side. Quote the correlationId when reporting it.");
     }
 
-    /** Framework-handled errors (and ErrorResponseException) pass through here: add the correlation id. */
+    /**
+     * Framework-handled errors (and ErrorResponseException) pass through here: add the correlation id.
+     * Spring often calls this with a null body and builds the ProblemDetail inside super, so the id
+     * is added to the response super returns, not to the incoming body.
+     */
     @Override
     protected ResponseEntity<Object> handleExceptionInternal(Exception ex, Object body, HttpHeaders headers,
                                                              HttpStatusCode statusCode, WebRequest request) {
-        if (body instanceof ProblemDetail pd) {
+        ResponseEntity<Object> response = super.handleExceptionInternal(ex, body, headers, statusCode, request);
+        if (response != null && response.getBody() instanceof ProblemDetail pd) {
             pd.setProperty("correlationId", CorrelationId.current());
         }
-        return super.handleExceptionInternal(ex, body, headers, statusCode, request);
+        return response;
     }
 
     /** Bean Validation failures on the request body: list every field error, not just the first. */
