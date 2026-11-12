@@ -11,7 +11,7 @@ reputation monitoring, and SPF / DKIM / DMARC domain authentication.
 | 0 | Project skeleton, Docker, LocalStack resources, health check | Done |
 | 1 | Database schema, seeded templates, TemplateRenderer | Done |
 | 2 | Communication API: validation, idempotency, suppression check, outbox | Done |
-| 3 | Sender worker calling SES, rate limiting, retries, DLQ | Planned |
+| 3 | Outbox relay, sender worker calling SES, rate limiting, retries, DLQ | Done |
 | 4 | Event pipeline, suppression rules, local event simulator | Planned |
 | 5 | Reputation metrics, suppression API, batch sending | Planned |
 | 6 | Structured logging, PII masking, error handling | Planned |
@@ -260,6 +260,32 @@ try {
 | `422` | Same Idempotency-Key reused with a different body |
 
 Errors are `application/problem+json` (RFC 9457) with a stable `type` and details such as `missingFields`.
+
+## Watch an email go out (Phase 3)
+
+After `POST /v1/communications`, the outbox relay publishes the request to `pigeon-send-queue`
+within a second, the sender worker renders it and calls SES, and the status becomes `SENT`.
+LocalStack keeps every email SES "sent", so you can read it:
+
+```powershell
+# Status should move QUEUED -> SENT with an sesMessageId
+Invoke-RestMethod "http://localhost:8080/v1/communications/$($r.requestId)" | ConvertTo-Json -Depth 5
+
+# The email itself, as LocalStack's SES received it
+(Invoke-RestMethod http://localhost:4566/_aws/ses).messages |
+  Select-Object Id, Source, Subject, @{n="To";e={$_.Destination.ToAddresses}} | Format-List
+```
+
+| Situation | What Pigeon does |
+|---|---|
+| SES accepts | `SENT`, `ses_message_id` stored, `SENT` event in history |
+| SES throttles, network error, 5xx | Retries after 10s, 20s, 40s (visibility timeout pushed out); `SEND_RETRY` events |
+| SES rejects (bad request, unverified domain) | `FAILED` immediately, no retry |
+| Retries exhausted (3 attempts) | `FAILED` with the last error |
+| Address suppressed after the request was accepted | `SUPPRESSED` at send time, nothing sent |
+| Same SQS message delivered twice | Second delivery sees `SENT` (or an active lease) and does nothing |
+| Unreadable or unknown message | Thrown 3 times, then SQS moves it to `pigeon-send-dlq` |
+| SQS unreachable | Relay keeps rows `PENDING`, pauses up to 30s between tries, `FAILED` after 20 attempts |
 
 ## Tests
 ```powershell

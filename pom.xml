@@ -132,6 +132,12 @@
             <artifactId>localstack</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Waits for asynchronous work (outbox relay, SQS listener) in integration tests -->
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

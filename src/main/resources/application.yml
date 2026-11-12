@@ -18,6 +18,10 @@ spring:
     aws:
       region:
         static: ${AWS_REGION:us-east-1}
+      sqs:
+        listener:
+          max-messages-per-poll: 10
+          poll-timeout: 10s           # long polling: fewer empty receives, lower cost
 
 pigeon:
   aws:
@@ -31,6 +35,23 @@ pigeon:
       transactional: pigeon-txn-prod
       bulk: pigeon-bulk-prod
     identity: notify.pigeon.local
+  idempotency:
+    ttl: 24h
+  sender:
+    enabled: true
+    concurrency: 10
+    rate-per-second: 14         # per instance; fleet total must stay under the SES MaxSendRate
+    max-attempts: 3
+    lease: 2m
+    base-backoff: 10s
+    max-backoff: 5m
+    from-display-name: Acme Benefits
+  outbox:
+    relay:
+      enabled: true
+      poll-interval-ms: 500
+      batch-size: 50
+      max-attempts: 20
 
 server:
   port: 8080

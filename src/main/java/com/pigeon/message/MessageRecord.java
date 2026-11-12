@@ -9,6 +9,7 @@ import jakarta.persistence.PostLoad;
 import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -78,6 +79,10 @@ public class MessageRecord implements Persistable<UUID> {
     @Column(name = "sent_at", columnDefinition = "timestamptz")
     private Instant sentAt;
 
+    /** While in the future, one worker owns the send. See V5__send_lease.sql. */
+    @Column(name = "send_lease_until", columnDefinition = "timestamptz")
+    private Instant sendLeaseUntil;
+
     @Transient
     private boolean isNew = true;
 
@@ -109,16 +114,67 @@ public class MessageRecord implements Persistable<UUID> {
         this.updatedAt = now;
     }
 
+    /** At accept time (Phase 2) or at send time, if the address was suppressed in between. */
     public void markSuppressed(Instant now) {
-        requireStatus(MessageStatus.ACCEPTED);
+        requireStatus(MessageStatus.ACCEPTED, MessageStatus.QUEUED);
         this.status = MessageStatus.SUPPRESSED;
+        this.sendLeaseUntil = null;
         this.updatedAt = now;
     }
 
-    private void requireStatus(MessageStatus expected) {
-        if (status != expected) {
-            throw new IllegalStateException("Message " + id + " is " + status + ", expected " + expected);
+    public boolean isLeasedAt(Instant now) {
+        return sendLeaseUntil != null && sendLeaseUntil.isAfter(now);
+    }
+
+    /** A worker takes ownership of the send for {@code lease}; counts as one attempt. */
+    public void claimForSend(Instant now, Duration lease) {
+        requireStatus(MessageStatus.QUEUED);
+        this.attemptCount++;
+        this.sendLeaseUntil = now.plus(lease);
+        this.updatedAt = now;
+    }
+
+    public void markSent(String sesMessageId, Instant now) {
+        requireStatus(MessageStatus.QUEUED);
+        this.status = MessageStatus.SENT;
+        this.sesMessageId = sesMessageId;
+        this.sentAt = now;
+        this.sendLeaseUntil = null;
+        this.lastError = null;
+        this.updatedAt = now;
+    }
+
+    /** A retryable failure: stays QUEUED, releases the lease so the next delivery can try again. */
+    public void recordSendFailure(String error, Instant now) {
+        this.lastError = truncate(error);
+        this.sendLeaseUntil = null;
+        this.updatedAt = now;
+    }
+
+    /** Permanent failure, or retries exhausted. Nothing more will be attempted. */
+    public void markFailed(String error, Instant now) {
+        requireStatus(MessageStatus.ACCEPTED, MessageStatus.QUEUED);
+        this.status = MessageStatus.FAILED;
+        this.lastError = truncate(error);
+        this.sendLeaseUntil = null;
+        this.updatedAt = now;
+    }
+
+    private static String truncate(String error) {
+        if (error == null) {
+            return null;
         }
+        return error.length() <= 1000 ? error : error.substring(0, 1000);
+    }
+
+    private void requireStatus(MessageStatus... expected) {
+        for (MessageStatus e : expected) {
+            if (status == e) {
+                return;
+            }
+        }
+        throw new IllegalStateException("Message " + id + " is " + status + ", expected one of "
+                + java.util.Arrays.toString(expected));
     }
 
     @PostLoad
@@ -191,5 +247,9 @@ public class MessageRecord implements Persistable<UUID> {
 
     public Instant getSentAt() {
         return sentAt;
+    }
+
+    public Instant getSendLeaseUntil() {
+        return sendLeaseUntil;
     }
 }

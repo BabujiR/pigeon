@@ -69,6 +69,26 @@ public class OutboxEntry {
         return o;
     }
 
+    public void markPublished(Instant now) {
+        this.attempts++;
+        this.status = Status.PUBLISHED;
+        this.publishedAt = now;
+        this.lastError = null;
+    }
+
+    /** Counts a failed publish; gives up (FAILED) after {@code maxAttempts}. */
+    public void recordFailure(String error, int maxAttempts) {
+        this.attempts++;
+        this.lastError = error == null || error.length() <= 1000 ? error : error.substring(0, 1000);
+        if (attempts >= maxAttempts) {
+            this.status = Status.FAILED;
+        }
+    }
+
+    public String getLastError() {
+        return lastError;
+    }
+
     public Long getId() {
         return id;
     }
